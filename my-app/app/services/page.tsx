@@ -18,7 +18,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Sidebar } from "@/components/sidebar"
+import Sidebar from "@/components/sidebar"
 import { Plus, Search, Wrench, DollarSign, Clock, User, Filter } from "lucide-react"
 
 // Mock data for services
