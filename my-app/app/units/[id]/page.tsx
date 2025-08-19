@@ -1,10 +1,11 @@
+// my-app/app/units/[id]/page.tsx
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Sidebar } from "@/components/sidebar"
+import Sidebar from "@/components/sidebar"
 import { ArrowLeft, Edit, Clock, Wrench, AlertTriangle, DollarSign } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -79,7 +80,7 @@ const mockAnomalies = [
   },
 ]
 
-export default function UnitDetailsPage({ params }: { params: { id: string } }) {
+export default function UnitDetailsPage() {
   const router = useRouter()
 
   const getStatusBadge = (status: string) => {

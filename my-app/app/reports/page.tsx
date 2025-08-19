@@ -1,3 +1,4 @@
+// my-app/app/reports/page.tsx
 "use client"
 
 import { useState } from "react"
@@ -9,47 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Sidebar } from "@/components/sidebar"
+import Sidebar from "@/components/sidebar"
 import { Download, AlertTriangle, Clock, DollarSign, TrendingUp, Calendar, Wrench, Fuel, Bell } from "lucide-react"
 
 // Mock data for reports
 const upcomingMaintenanceReport = [
-  {
-    unitNumber: "FL-001",
-    maintenanceType: "500h",
-    currentHours: 1250,
-    scheduledHours: 1500,
-    daysUntilDue: 5,
-    estimatedCost: 320.0,
-    priority: "medium",
-  },
-  {
-    unitNumber: "FL-003",
-    maintenanceType: "1000h",
-    currentHours: 2100,
-    scheduledHours: 2000,
-    daysUntilDue: -2,
-    estimatedCost: 580.0,
-    priority: "high",
-  },
-  {
-    unitNumber: "FL-007",
-    maintenanceType: "250h",
-    currentHours: 890,
-    scheduledHours: 1000,
-    daysUntilDue: 8,
-    estimatedCost: 180.0,
-    priority: "low",
-  },
-  {
-    unitNumber: "FL-012",
-    maintenanceType: "2000h",
-    currentHours: 1950,
-    scheduledHours: 2000,
-    daysUntilDue: 3,
-    estimatedCost: 750.0,
-    priority: "high",
-  },
+  { unitNumber: "FL-001", maintenanceType: "500h", currentHours: 1250, scheduledHours: 1500, daysUntilDue: 5, estimatedCost: 320.0, priority: "medium" },
+  { unitNumber: "FL-003", maintenanceType: "1000h", currentHours: 2100, scheduledHours: 2000, daysUntilDue: -2, estimatedCost: 580.0, priority: "high" },
+  { unitNumber: "FL-007", maintenanceType: "250h", currentHours: 890, scheduledHours: 1000, daysUntilDue: 8, estimatedCost: 180.0, priority: "low" },
+  { unitNumber: "FL-012", maintenanceType: "2000h", currentHours: 1950, scheduledHours: 2000, daysUntilDue: 3, estimatedCost: 750.0, priority: "high" },
 ]
 
 const costSummaryReport = [
@@ -69,42 +38,10 @@ const monthlyTrendData = [
 ]
 
 const alertsData = [
-  {
-    id: 1,
-    type: "maintenance",
-    severity: "high",
-    title: "Mantenimiento Vencido",
-    description: "FL-003 tiene mantenimiento de 1000h vencido por 2 días",
-    unit: "FL-003",
-    createdAt: "2024-03-15T10:30:00Z",
-  },
-  {
-    id: 2,
-    type: "fuel",
-    severity: "medium",
-    title: "Eficiencia de Combustible Baja",
-    description: "FL-005 muestra eficiencia por debajo del promedio (1.22 L/h)",
-    unit: "FL-005",
-    createdAt: "2024-03-14T14:20:00Z",
-  },
-  {
-    id: 3,
-    type: "anomaly",
-    severity: "high",
-    title: "Anomalía Crítica Reportada",
-    description: "FL-002 reporta fuga de aceite hidráulico en el mástil",
-    unit: "FL-002",
-    createdAt: "2024-03-14T09:15:00Z",
-  },
-  {
-    id: 4,
-    type: "maintenance",
-    severity: "medium",
-    title: "Mantenimiento Próximo",
-    description: "FL-012 requiere mantenimiento de 2000h en 3 días",
-    unit: "FL-012",
-    createdAt: "2024-03-13T16:45:00Z",
-  },
+  { id: 1, type: "maintenance", severity: "high", title: "Mantenimiento Vencido", description: "FL-003 tiene mantenimiento de 1000h vencido por 2 días", unit: "FL-003", createdAt: "2024-03-15T10:30:00Z" },
+  { id: 2, type: "fuel", severity: "medium", title: "Eficiencia de Combustible Baja", description: "FL-005 muestra eficiencia por debajo del promedio (1.22 L/h)", unit: "FL-005", createdAt: "2024-03-14T14:20:00Z" },
+  { id: 3, type: "anomaly", severity: "high", title: "Anomalía Crítica Reportada", description: "FL-002 reporta fuga de aceite hidráulico en el mástil", unit: "FL-002", createdAt: "2024-03-14T09:15:00Z" },
+  { id: 4, type: "maintenance", severity: "medium", title: "Mantenimiento Próximo", description: "FL-012 requiere mantenimiento de 2000h en 3 días", unit: "FL-012", createdAt: "2024-03-13T16:45:00Z" },
 ]
 
 const downtimeReport = [
@@ -117,7 +54,6 @@ const downtimeReport = [
 
 export default function ReportsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("current_month")
-  const [selectedReport, setSelectedReport] = useState("maintenance")
 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
@@ -147,9 +83,7 @@ export default function ReportsPage() {
 
   const totalCosts = costSummaryReport.reduce((sum, item) => sum + item.amount, 0)
   const overdueMaintenances = upcomingMaintenanceReport.filter((m) => m.daysUntilDue < 0).length
-  const upcomingMaintenances = upcomingMaintenanceReport.filter(
-    (m) => m.daysUntilDue >= 0 && m.daysUntilDue <= 7,
-  ).length
+  const upcomingMaintenances = upcomingMaintenanceReport.filter((m) => m.daysUntilDue >= 0 && m.daysUntilDue <= 7).length
   const highSeverityAlerts = alertsData.filter((a) => a.severity === "high").length
 
   return (
@@ -300,9 +234,7 @@ export default function ReportsPage() {
                   </CardHeader>
                   <CardContent>
                     <ChartContainer
-                      config={{
-                        amount: { label: "Monto", color: "hsl(var(--chart-1))" },
-                      }}
+                      config={{ amount: { label: "Monto", color: "hsl(var(--chart-1))" } }}
                       className="h-[300px]"
                     >
                       <ResponsiveContainer width="100%" height="100%">

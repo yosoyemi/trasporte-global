@@ -1,41 +1,56 @@
+// app/units/page.tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Sidebar } from "@/components/sidebar"
+import Sidebar from "@/components/sidebar"
 import { Eye, Edit, Truck, Clock, Wrench } from "lucide-react"
 import { getUnits, getUnitsSummary } from "@/lib/actions/units"
 import { UnitsFilters } from "@/components/units-filters"
 import { AddUnitDialog } from "@/components/add-unit-dialog"
 import Link from "next/link"
 
-export default async function UnitsPage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined }
-}) {
-  const search = typeof searchParams.search === "string" ? searchParams.search : ""
-  const status = typeof searchParams.status === "string" ? searchParams.status : "all"
-  const fuel_type = typeof searchParams.fuel_type === "string" ? searchParams.fuel_type : "all"
-  const brand = typeof searchParams.brand === "string" ? searchParams.brand : "all"
+type RawSearchParams = Record<string, string | string[] | undefined>
+
+type UnitRow = {
+  id: string | number
+  unit_number: string
+  brand: string
+  model: string
+  serial_number: string
+  current_hours: number
+  status: "active" | "maintenance" | "inactive" | string
+  next_service_hours: number | null
+}
+
+type Summary = {
+  total: number
+  active: number
+  maintenance: number
+  inactive: number
+}
+
+export default async function UnitsPage(props: { searchParams?: Promise<RawSearchParams> }) {
+  // Normaliza searchParams (Next 15 lo entrega como Promise)
+  const sp: RawSearchParams = await (props.searchParams ?? Promise.resolve({} as RawSearchParams))
+
+  const search = typeof sp.search === "string" ? sp.search : ""
+  const status = typeof sp.status === "string" ? sp.status : "all"
+  const fuel_type = typeof sp.fuel_type === "string" ? sp.fuel_type : "all"
+  const brand = typeof sp.brand === "string" ? sp.brand : "all"
 
   const [unitsResult, summaryResult] = await Promise.all([
     getUnits({ status, fuel_type, brand, search }),
     getUnitsSummary(),
   ])
 
-  const units = unitsResult.success ? unitsResult.data : []
-  const summary = summaryResult.success
-    ? summaryResult.data
-    : {
-        total: 0,
-        active: 0,
-        maintenance: 0,
-        inactive: 0,
-      }
+  const units: UnitRow[] = (unitsResult.success ? unitsResult.data : []) as UnitRow[]
+  const summary: Summary = summaryResult.success
+    ? (summaryResult.data as Summary)
+    : { total: 0, active: 0, maintenance: 0, inactive: 0 }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (st: string) => {
+    switch (st) {
       case "active":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Activo</Badge>
       case "maintenance":
@@ -43,25 +58,21 @@ export default async function UnitsPage({
       case "inactive":
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Inactivo</Badge>
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Badge variant="secondary">{st}</Badge>
     }
   }
 
   const getServiceStatus = (currentHours: number, nextServiceHours: number | null) => {
     if (!nextServiceHours) return <Badge variant="outline">Sin programar</Badge>
-
     const hoursUntilService = nextServiceHours - currentHours
-    if (hoursUntilService <= 0) {
-      return <Badge variant="destructive">Vencido</Badge>
-    } else if (hoursUntilService <= 50) {
+    if (hoursUntilService <= 0) return <Badge variant="destructive">Vencido</Badge>
+    if (hoursUntilService <= 50)
       return <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">Próximo</Badge>
-    } else {
-      return <Badge variant="outline">Al día</Badge>
-    }
+    return <Badge variant="outline">Al día</Badge>
   }
 
   const unitsNeedingService = units.filter(
-    (unit) => unit.next_service_hours && unit.next_service_hours - unit.current_hours <= 50,
+    (u) => u.next_service_hours && u.next_service_hours - u.current_hours <= 50,
   ).length
 
   return (

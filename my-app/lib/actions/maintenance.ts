@@ -1,3 +1,4 @@
+// lib/actions/maintenance.ts
 "use server"
 
 import { createServerClient } from "@/lib/supabase/server"
@@ -38,42 +39,26 @@ export type UpdateMaintenanceData = Partial<CreateMaintenanceData> & {
   status?: "pending" | "overdue" | "completed"
 }
 
-// Standard maintenance intervals in hours
-export const MAINTENANCE_INTERVALS = [250, 500, 750, 1000, 2000, 3000]
-
 export async function createMaintenanceSchedule(data: CreateMaintenanceData) {
   const supabase = createServerClient()
-
   try {
-    // Get current unit hours
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select("current_hours")
       .eq("id", data.unit_id)
       .single()
 
-    if (unitError) {
-      throw new Error(`Error fetching unit: ${unitError.message}`)
-    }
+    if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
-    // Determine status based on current hours vs next service hours
     const status = unit.current_hours >= data.next_service_hours ? "overdue" : "pending"
 
     const { data: maintenance, error } = await supabase
       .from("maintenance_schedules")
-      .insert([
-        {
-          ...data,
-          status,
-        },
-      ])
+      .insert([{ ...data, status }])
       .select()
       .single()
 
-    if (error) {
-      console.error("Error creating maintenance schedule:", error)
-      throw new Error(`Error creating maintenance schedule: ${error.message}`)
-    }
+    if (error) throw new Error(error.message || "Failed to create maintenance schedule")
 
     revalidatePath("/maintenance")
     revalidatePath("/")
@@ -86,7 +71,6 @@ export async function createMaintenanceSchedule(data: CreateMaintenanceData) {
 
 export async function updateMaintenanceSchedule(data: UpdateMaintenanceData) {
   const supabase = createServerClient()
-
   try {
     const { id, ...updateData } = data
     const { data: maintenance, error } = await supabase
@@ -96,10 +80,7 @@ export async function updateMaintenanceSchedule(data: UpdateMaintenanceData) {
       .select()
       .single()
 
-    if (error) {
-      console.error("Error updating maintenance schedule:", error)
-      throw new Error(`Error updating maintenance schedule: ${error.message}`)
-    }
+    if (error) throw new Error(error.message || "Failed to update maintenance schedule")
 
     revalidatePath("/maintenance")
     revalidatePath("/")
@@ -112,48 +93,30 @@ export async function updateMaintenanceSchedule(data: UpdateMaintenanceData) {
 
 export async function completeMaintenanceSchedule(
   id: string,
-  data: {
-    actual_cost: number
-    technician: string
-    notes?: string
-  },
+  data: { actual_cost: number; technician: string; notes?: string },
 ) {
   const supabase = createServerClient()
-
   try {
-    // Get the maintenance schedule
     const { data: currentMaintenance, error: fetchError } = await supabase
       .from("maintenance_schedules")
       .select("unit_id, interval_hours, next_service_hours")
       .eq("id", id)
       .single()
+    if (fetchError) throw new Error(fetchError.message || "Failed to fetch maintenance")
 
-    if (fetchError) {
-      throw new Error(`Error fetching maintenance: ${fetchError.message}`)
-    }
-
-    // Get current unit hours
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select("current_hours")
       .eq("id", currentMaintenance.unit_id)
       .single()
+    if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
-    if (unitError) {
-      throw new Error(`Error fetching unit: ${unitError.message}`)
-    }
-
-    // Mark maintenance as completed
     const { error: updateError } = await supabase
       .from("maintenance_schedules")
       .update({ status: "completed" })
       .eq("id", id)
+    if (updateError) throw new Error(updateError.message || "Failed to complete maintenance")
 
-    if (updateError) {
-      throw new Error(`Error completing maintenance: ${updateError.message}`)
-    }
-
-    // Create service record
     const { error: serviceError } = await supabase.from("services").insert([
       {
         unit_id: currentMaintenance.unit_id,
@@ -167,12 +130,8 @@ export async function completeMaintenanceSchedule(
         status: "completed",
       },
     ])
+    if (serviceError) console.error("Error creating service record:", serviceError)
 
-    if (serviceError) {
-      console.error("Error creating service record:", serviceError)
-    }
-
-    // Create next maintenance schedule
     await createNextMaintenanceSchedule(
       currentMaintenance.unit_id,
       currentMaintenance.interval_hours,
@@ -192,15 +151,12 @@ export async function completeMaintenanceSchedule(
 
 async function createNextMaintenanceSchedule(unitId: string, intervalHours: number, currentHours: number) {
   const supabase = createServerClient()
-
   try {
-    // Get unit info
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select("brand, model")
       .eq("id", unitId)
       .single()
-
     if (unitError) {
       console.error("Error fetching unit for next maintenance:", unitError)
       return
@@ -245,7 +201,6 @@ export async function getMaintenanceSchedules(filters?: {
   overdue_only?: boolean
 }) {
   const supabase = createServerClient()
-
   try {
     let query = supabase
       .from("maintenance_schedules")
@@ -257,28 +212,14 @@ export async function getMaintenanceSchedules(filters?: {
       )
       .order("next_service_hours", { ascending: true })
 
-    if (filters?.status && filters.status !== "all") {
-      query = query.eq("status", filters.status)
-    }
-
-    if (filters?.unit_id) {
-      query = query.eq("unit_id", filters.unit_id)
-    }
-
-    if (filters?.maintenance_type && filters.maintenance_type !== "all") {
+    if (filters?.status && filters.status !== "all") query = query.eq("status", filters.status)
+    if (filters?.unit_id) query = query.eq("unit_id", filters.unit_id)
+    if (filters?.maintenance_type && filters.maintenance_type !== "all")
       query = query.eq("maintenance_type", filters.maintenance_type)
-    }
-
-    if (filters?.overdue_only) {
-      query = query.eq("status", "overdue")
-    }
+    if (filters?.overdue_only) query = query.eq("status", "overdue")
 
     const { data: schedules, error } = await query
-
-    if (error) {
-      console.error("Error fetching maintenance schedules:", error)
-      throw new Error(`Error fetching maintenance schedules: ${error.message}`)
-    }
+    if (error) throw new Error(error.message || "Failed to fetch maintenance schedules")
 
     return { success: true, data: schedules || [] }
   } catch (error) {
@@ -289,7 +230,6 @@ export async function getMaintenanceSchedules(filters?: {
 
 export async function getMaintenanceById(id: string) {
   const supabase = createServerClient()
-
   try {
     const { data: maintenance, error } = await supabase
       .from("maintenance_schedules")
@@ -302,10 +242,7 @@ export async function getMaintenanceById(id: string) {
       .eq("id", id)
       .single()
 
-    if (error) {
-      console.error("Error fetching maintenance:", error)
-      throw new Error(`Error fetching maintenance: ${error.message}`)
-    }
+    if (error) throw new Error(error.message || "Failed to fetch maintenance by id")
 
     return { success: true, data: maintenance }
   } catch (error) {
@@ -316,21 +253,16 @@ export async function getMaintenanceById(id: string) {
 
 export async function schedulePreventiveMaintenance(unitId: string, intervalHours: number) {
   const supabase = createServerClient()
-
   try {
-    // Get unit current hours
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select("current_hours, brand, model, unit_number")
       .eq("id", unitId)
       .single()
+    if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
-    if (unitError) {
-      throw new Error(`Error fetching unit: ${unitError.message}`)
-    }
-
-    // Calculate next service hours
-    const nextServiceHours = Math.ceil(unit.current_hours / intervalHours) * intervalHours + intervalHours
+    const nextMultiple = Math.ceil((unit.current_hours + 1) / intervalHours) * intervalHours
+    const nextServiceHours = nextMultiple
     const description = `Mantenimiento preventivo ${intervalHours}h - ${unit.brand} ${unit.model}`
 
     const maintenanceData: CreateMaintenanceData = {
@@ -352,13 +284,9 @@ export async function schedulePreventiveMaintenance(unitId: string, intervalHour
 
 export async function getMaintenanceSummary() {
   const supabase = createServerClient()
-
   try {
     const { data: schedules, error } = await supabase.from("maintenance_schedules").select("status, maintenance_type")
-
-    if (error) {
-      throw new Error(`Error fetching maintenance summary: ${error.message}`)
-    }
+    if (error) throw new Error(error.message || "Failed to fetch maintenance summary")
 
     const summary = {
       total: schedules?.length || 0,
@@ -372,44 +300,6 @@ export async function getMaintenanceSummary() {
     return { success: true, data: summary }
   } catch (error) {
     console.error("Error in getMaintenanceSummary:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
-  }
-}
-
-export async function updateMaintenanceStatuses() {
-  const supabase = createServerClient()
-
-  try {
-    // Get all pending maintenances with unit hours
-    const { data: pendingMaintenances, error } = await supabase
-      .from("maintenance_schedules")
-      .select(
-        `
-        id,
-        next_service_hours,
-        unit:units!inner(current_hours)
-      `,
-      )
-      .eq("status", "pending")
-
-    if (error) {
-      throw new Error(`Error fetching pending maintenances: ${error.message}`)
-    }
-
-    // Update overdue maintenances
-    const overdueIds = pendingMaintenances
-      ?.filter((m) => m.unit && m.unit.current_hours >= m.next_service_hours)
-      .map((m) => m.id)
-
-    if (overdueIds && overdueIds.length > 0) {
-      await supabase.from("maintenance_schedules").update({ status: "overdue" }).in("id", overdueIds)
-    }
-
-    revalidatePath("/maintenance")
-    revalidatePath("/")
-    return { success: true, updated: overdueIds?.length || 0 }
-  } catch (error) {
-    console.error("Error in updateMaintenanceStatuses:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }

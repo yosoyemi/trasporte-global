@@ -1,61 +1,103 @@
+// app/maintenance/page.tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Sidebar } from "@/components/sidebar"
+import Sidebar from "@/components/sidebar"
 import { Calendar, Clock, CheckCircle, AlertTriangle, Wrench } from "lucide-react"
-import { getMaintenanceSchedules, getMaintenanceSummary, MAINTENANCE_INTERVALS } from "@/lib/actions/maintenance"
+import { getMaintenanceSchedules, getMaintenanceSummary } from "@/lib/actions/maintenance"
+import { getUnits } from "@/lib/actions/units"
+import { MAINTENANCE_INTERVALS } from "@/lib/constants/maintenance"
 import { MaintenanceFilters } from "@/components/maintenance-filters"
 import { ScheduleMaintenanceDialog } from "@/components/schedule-maintenance-dialog"
 import { CompleteMaintenanceDialog } from "@/components/complete-maintenance-dialog"
 
-export default async function MaintenancePage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined }
-}) {
-  const status = typeof searchParams.status === "string" ? searchParams.status : "all"
-  const unit_id = typeof searchParams.unit_id === "string" ? searchParams.unit_id : undefined
-  const maintenance_type = typeof searchParams.maintenance_type === "string" ? searchParams.maintenance_type : "all"
+type RawSearchParams = Record<string, string | string[] | undefined>
 
-  const [schedulesResult, summaryResult] = await Promise.all([
+type ScheduleRow = {
+  id: string
+  status: "pending" | "overdue" | "completed"
+  interval_hours: number
+  scheduled_hours?: number | null
+  current_unit_hours?: number | null
+  scheduled_date?: string | null
+  estimated_cost?: number | null
+  actual_cost?: number | null
+  unit?: {
+    unit_number?: string | null
+    brand?: string | null
+    model?: string | null
+  } | null
+}
+
+type Summary = {
+  total: number
+  pending: number
+  overdue: number
+  completed: number
+  preventive: number
+  corrective: number
+}
+
+export default async function MaintenancePage(props: {
+  // Next 15: Promise o undefined
+  searchParams?: Promise<RawSearchParams>
+}) {
+  // Normalizamos (si viene undefined, usamos {}).
+  const sp: RawSearchParams = await (props.searchParams ?? Promise.resolve({} as RawSearchParams))
+
+  const status = typeof sp.status === "string" ? sp.status : "all"
+  const unit_id = typeof sp.unit_id === "string" ? sp.unit_id : undefined
+  const maintenance_type = typeof sp.maintenance_type === "string" ? sp.maintenance_type : "all"
+
+  const [schedulesResult, summaryResult, unitsResult] = await Promise.all([
     getMaintenanceSchedules({ status, unit_id, maintenance_type }),
     getMaintenanceSummary(),
+    getUnits(),
   ])
 
-  const schedules = schedulesResult.success ? schedulesResult.data : []
-  const summary = summaryResult.success
-    ? summaryResult.data
-    : {
-        total: 0,
-        pending: 0,
-        overdue: 0,
-        completed: 0,
-        preventive: 0,
-        corrective: 0,
-      }
+  const schedules: ScheduleRow[] = (schedulesResult.success ? schedulesResult.data : []) as ScheduleRow[]
+  const summary: Summary = summaryResult.success
+    ? (summaryResult.data as Summary)
+    : { total: 0, pending: 0, overdue: 0, completed: 0, preventive: 0, corrective: 0 }
 
-  const getStatusBadge = (schedule: any) => {
+  const units =
+    unitsResult?.success && Array.isArray(unitsResult.data)
+      ? unitsResult.data.map((u) => ({
+          id: String((u as { id: string | number }).id),
+          unit_number: (u as { unit_number?: string }).unit_number ?? "N/A",
+          brand: (u as { brand?: string }).brand ?? "",
+          model: (u as { model?: string }).model ?? "",
+          current_hours: Number((u as { current_hours?: number }).current_hours ?? 0),
+        }))
+      : []
+
+  const getStatusBadge = (schedule: ScheduleRow) => {
     if (schedule.status === "completed") {
       return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completado</Badge>
     }
     if (schedule.status === "overdue") {
       return <Badge variant="destructive">Vencido</Badge>
     }
-    if (schedule.current_unit_hours >= schedule.scheduled_hours) {
+    const current = schedule.current_unit_hours ?? 0
+    const target = schedule.scheduled_hours ?? Number.POSITIVE_INFINITY
+    if (current >= target) {
       return <Badge variant="destructive">Vencido</Badge>
     }
-    const hoursRemaining = schedule.scheduled_hours - schedule.current_unit_hours
-    if (hoursRemaining <= 50) {
+    const hoursRemaining = target - current
+    if (Number.isFinite(hoursRemaining) && hoursRemaining <= 50) {
       return <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">Próximo</Badge>
     }
     return <Badge variant="outline">Programado</Badge>
   }
 
-  const upcomingCount = schedules.filter(
-    (s) => s.status === "pending" && s.scheduled_hours - s.current_unit_hours <= 50,
-  ).length
+  const upcomingCount = schedules.filter((s) => {
+    if (s.status !== "pending") return false
+    const current = s.current_unit_hours ?? 0
+    const target = s.scheduled_hours ?? Number.POSITIVE_INFINITY
+    return Number.isFinite(target) && target - current <= 50
+  }).length
 
   return (
     <div className="flex h-screen bg-background">
@@ -69,7 +111,7 @@ export default async function MaintenancePage({
               <h1 className="text-3xl font-bold font-mono text-foreground">Mantenimientos Preventivos</h1>
               <p className="text-muted-foreground mt-1">Programación y seguimiento de mantenimientos</p>
             </div>
-            <ScheduleMaintenanceDialog />
+            <ScheduleMaintenanceDialog units={units} />
           </div>
 
           {/* Summary Cards */}
@@ -119,7 +161,7 @@ export default async function MaintenancePage({
             </Card>
           </div>
 
-          {/* Tabs for different views */}
+          {/* Tabs */}
           <Tabs defaultValue="list" className="space-y-4">
             <TabsList>
               <TabsTrigger value="list">Lista</TabsTrigger>
@@ -128,10 +170,8 @@ export default async function MaintenancePage({
             </TabsList>
 
             <TabsContent value="list" className="space-y-4">
-              {/* Filters */}
               <MaintenanceFilters />
 
-              {/* Maintenance Schedule Table */}
               <Card>
                 <CardHeader>
                   <CardTitle>Programación de Mantenimientos</CardTitle>
@@ -163,20 +203,30 @@ export default async function MaintenancePage({
                           <TableCell>
                             <Badge variant="outline">{schedule.interval_hours}h</Badge>
                           </TableCell>
-                          <TableCell>{schedule.scheduled_hours.toLocaleString()}h</TableCell>
+                          <TableCell>
+                            {typeof schedule.scheduled_hours === "number"
+                              ? `${schedule.scheduled_hours.toLocaleString()}h`
+                              : "—"}
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-muted-foreground" />
-                              {schedule.current_unit_hours.toLocaleString()}h
+                              {typeof schedule.current_unit_hours === "number"
+                                ? `${schedule.current_unit_hours.toLocaleString()}h`
+                                : "—"}
                             </div>
                           </TableCell>
                           <TableCell>{getStatusBadge(schedule)}</TableCell>
-                          <TableCell>{new Date(schedule.scheduled_date).toLocaleDateString("es-ES")}</TableCell>
+                          <TableCell>
+                            {schedule.scheduled_date
+                              ? new Date(schedule.scheduled_date).toLocaleDateString("es-ES")
+                              : "—"}
+                          </TableCell>
                           <TableCell>
                             $
-                            {schedule.status === "completed" && schedule.actual_cost
+                            {schedule.status === "completed" && typeof schedule.actual_cost === "number"
                               ? schedule.actual_cost.toFixed(2)
-                              : schedule.estimated_cost.toFixed(2)}
+                              : (schedule.estimated_cost ?? 0).toFixed(2)}
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">

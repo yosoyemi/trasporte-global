@@ -1,3 +1,4 @@
+// my-app/components/complete-maintenance-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -29,12 +30,11 @@ export function CompleteMaintenanceDialog({ maintenanceId }: CompleteMaintenance
 
   async function handleSubmit(formData: FormData) {
     setIsLoading(true)
-
     try {
       const data = {
         actual_cost: Number.parseFloat(formData.get("actual_cost") as string),
         technician: formData.get("technician") as string,
-        notes: formData.get("notes") as string,
+        notes: (formData.get("notes") as string) || undefined,
       }
 
       const result = await completeMaintenanceSchedule(maintenanceId, data)
@@ -46,7 +46,7 @@ export function CompleteMaintenanceDialog({ maintenanceId }: CompleteMaintenance
       } else {
         toast.error(result.error || "Error al completar el mantenimiento")
       }
-    } catch (error) {
+    } catch {
       toast.error("Error inesperado al completar el mantenimiento")
     } finally {
       setIsLoading(false)

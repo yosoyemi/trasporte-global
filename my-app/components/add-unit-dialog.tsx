@@ -1,3 +1,4 @@
+// my-app/components/add-unit-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -18,9 +19,14 @@ import { createUnit } from "@/lib/actions/units"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
+type FuelType = "electric" | "gas" | "diesel"
+type UnitStatus = "active" | "maintenance" | "inactive"
+
 export function AddUnitDialog() {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [fuelType, setFuelType] = useState<FuelType | "">("")
+  const [status, setStatus] = useState<UnitStatus>("active")
   const router = useRouter()
 
   async function handleSubmit(formData: FormData) {
@@ -34,9 +40,9 @@ export function AddUnitDialog() {
         serial_number: formData.get("serial_number") as string,
         year: Number.parseInt(formData.get("year") as string),
         capacity_kg: Number.parseInt(formData.get("capacity_kg") as string),
-        fuel_type: formData.get("fuel_type") as "electric" | "gas" | "diesel",
+        fuel_type: formData.get("fuel_type") as FuelType,
         current_hours: Number.parseInt(formData.get("current_hours") as string),
-        status: formData.get("status") as "active" | "maintenance" | "inactive",
+        status: formData.get("status") as UnitStatus,
         location: formData.get("location") as string,
       }
 
@@ -49,7 +55,7 @@ export function AddUnitDialog() {
       } else {
         toast.error(result.error || "Error al crear la unidad")
       }
-    } catch (error) {
+    } catch {
       toast.error("Error inesperado al crear la unidad")
     } finally {
       setIsLoading(false)
@@ -70,6 +76,10 @@ export function AddUnitDialog() {
           <DialogDescription>Ingresa los datos técnicos del montacargas</DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-4">
+          {/* inputs ocultos para capturar selects en FormData */}
+          <input type="hidden" name="fuel_type" value={fuelType} />
+          <input type="hidden" name="status" value={status} />
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="unit_number">Número de Unidad *</Label>
@@ -95,9 +105,10 @@ export function AddUnitDialog() {
               <Label htmlFor="capacity_kg">Capacidad (kg) *</Label>
               <Input id="capacity_kg" name="capacity_kg" type="number" placeholder="2500" required />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="fuel_type">Tipo de Combustible *</Label>
-              <Select name="fuel_type" required>
+              <Select value={fuelType} onValueChange={(v: FuelType) => setFuelType(v)} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar tipo" />
                 </SelectTrigger>
@@ -108,13 +119,15 @@ export function AddUnitDialog() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="current_hours">Horómetro Actual *</Label>
               <Input id="current_hours" name="current_hours" type="number" placeholder="0" required />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="status">Estado *</Label>
-              <Select name="status" defaultValue="active" required>
+              <Select value={status} onValueChange={(v: UnitStatus) => setStatus(v)} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar estado" />
                 </SelectTrigger>
@@ -125,13 +138,19 @@ export function AddUnitDialog() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="location">Ubicación *</Label>
               <Input id="location" name="location" placeholder="Almacén Principal" required />
             </div>
           </div>
+
           <div className="flex gap-2 pt-4">
-            <Button type="submit" className="flex-1" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={isLoading || !fuelType || !status}
+            >
               {isLoading ? "Guardando..." : "Guardar"}
             </Button>
             <Button

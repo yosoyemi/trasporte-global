@@ -1,3 +1,4 @@
+// components/schedule-maintenance-dialog.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -14,53 +15,46 @@ import {
 } from "@/components/ui/dialog"
 import { Plus } from "lucide-react"
 import { schedulePreventiveMaintenance } from "@/lib/actions/maintenance"
-import { getUnits } from "@/lib/actions/units"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { MAINTENANCE_INTERVALS } from "@/lib/constants/maintenance"
 
-const MAINTENANCE_INTERVALS = [250, 500, 750, 1000, 2000, 3000]
+type UnitOption = {
+  id: string
+  unit_number: string
+  brand: string
+  model: string
+  current_hours: number
+}
 
-export function ScheduleMaintenanceDialog() {
+export function ScheduleMaintenanceDialog({ units }: { units: UnitOption[] }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [units, setUnits] = useState<any[]>([])
   const [selectedUnit, setSelectedUnit] = useState("")
   const [selectedInterval, setSelectedInterval] = useState("")
   const [nextServiceHours, setNextServiceHours] = useState<number | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    async function loadUnits() {
-      const result = await getUnits()
-      if (result.success) {
-        setUnits(result.data)
-      }
-    }
-    loadUnits()
-  }, [])
-
+  // Recalcular el próximo servicio cuando cambie unidad/intervalo
   useEffect(() => {
     if (selectedUnit && selectedInterval) {
       const unit = units.find((u) => u.id === selectedUnit)
       if (unit) {
         const intervalHours = Number.parseInt(selectedInterval)
-        const cycles = Math.ceil(unit.current_hours / intervalHours)
-        const nextHours = cycles * intervalHours
-        setNextServiceHours(nextHours > unit.current_hours ? nextHours : nextHours + intervalHours)
+        // siguiente múltiplo estrictamente mayor que el actual
+        const nextHours = Math.ceil((unit.current_hours + 1) / intervalHours) * intervalHours
+        setNextServiceHours(nextHours)
       }
     } else {
       setNextServiceHours(null)
     }
   }, [selectedUnit, selectedInterval, units])
 
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit() {
     if (!selectedUnit || !selectedInterval) return
-
     setIsLoading(true)
-
     try {
       const result = await schedulePreventiveMaintenance(selectedUnit, Number.parseInt(selectedInterval))
-
       if (result.success) {
         toast.success("Mantenimiento programado exitosamente")
         setIsOpen(false)
@@ -71,7 +65,7 @@ export function ScheduleMaintenanceDialog() {
       } else {
         toast.error(result.error || "Error al programar el mantenimiento")
       }
-    } catch (error) {
+    } catch {
       toast.error("Error inesperado al programar el mantenimiento")
     } finally {
       setIsLoading(false)
@@ -91,7 +85,8 @@ export function ScheduleMaintenanceDialog() {
           <DialogTitle>Programar Nuevo Mantenimiento</DialogTitle>
           <DialogDescription>Selecciona la unidad e intervalo de mantenimiento</DialogDescription>
         </DialogHeader>
-        <form action={handleSubmit} className="space-y-4">
+
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="unit">Unidad *</Label>
             <Select value={selectedUnit} onValueChange={setSelectedUnit} required>
@@ -99,12 +94,12 @@ export function ScheduleMaintenanceDialog() {
                 <SelectValue placeholder="Seleccionar unidad" />
               </SelectTrigger>
               <SelectContent>
+                {units.length === 0 && (
+                  <div className="px-2 py-1 text-sm text-muted-foreground">No hay unidades disponibles</div>
+                )}
                 {units.map((unit) => (
                   <SelectItem key={unit.id} value={unit.id}>
-                    {unit.unit_number} - {unit.current_hours.toLocaleString()}h
-                    <div className="text-sm text-muted-foreground">
-                      {unit.brand} {unit.model}
-                    </div>
+                    {unit.unit_number} — {unit.brand} {unit.model} · {unit.current_hours.toLocaleString()}h
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -120,16 +115,7 @@ export function ScheduleMaintenanceDialog() {
               <SelectContent>
                 {MAINTENANCE_INTERVALS.map((interval) => (
                   <SelectItem key={interval} value={interval.toString()}>
-                    <div>
-                      <div className="font-medium">{interval} horas</div>
-                      <div className="text-sm text-muted-foreground">
-                        {interval <= 500
-                          ? "Mantenimiento básico"
-                          : interval <= 1000
-                            ? "Mantenimiento intermedio"
-                            : "Mantenimiento mayor"}
-                      </div>
-                    </div>
+                    {interval} horas
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -143,8 +129,8 @@ export function ScheduleMaintenanceDialog() {
             </div>
           )}
 
-          <div className="flex gap-2 pt-4">
-            <Button type="submit" className="flex-1" disabled={isLoading || !selectedUnit || !selectedInterval}>
+          <div className="flex gap-2 pt-2">
+            <Button onClick={handleSubmit} className="flex-1" disabled={isLoading || !selectedUnit || !selectedInterval}>
               {isLoading ? "Programando..." : "Programar"}
             </Button>
             <Button
@@ -157,7 +143,7 @@ export function ScheduleMaintenanceDialog() {
               Cancelar
             </Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

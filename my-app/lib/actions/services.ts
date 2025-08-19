@@ -1,3 +1,4 @@
+// lib/actions/services.ts
 "use server"
 
 import { createServerClient } from "@/lib/supabase/server"
@@ -72,15 +73,15 @@ export async function createService(data: CreateServiceData) {
       throw new Error(`Error creating service: ${error.message}`)
     }
 
-    // If service is completed and has downtime, update unit status
-    if (data.status === "completed" && data.downtime_hours > 0) {
-      await updateUnitAfterService(data.unit_id, data.service_date)
+    // Si el servicio está completado y tuvo downtime, actualiza la unidad
+    if ((data.status ?? "completed") === "completed" && data.downtime_hours > 0) {
+      await updateUnitAfterService(data.unit_id)
     }
 
     revalidatePath("/services")
     revalidatePath("/units")
     revalidatePath("/")
-    return { success: true, data: service }
+    return { success: true, data: service as Service }
   } catch (error) {
     console.error("Error in createService:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
@@ -110,7 +111,7 @@ export async function updateService(data: UpdateServiceData) {
     revalidatePath("/services")
     revalidatePath("/units")
     revalidatePath("/")
-    return { success: true, data: service }
+    return { success: true, data: service as Service }
   } catch (error) {
     console.error("Error in updateService:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
@@ -159,33 +160,13 @@ export async function getServices(filters?: {
       )
       .order("service_date", { ascending: false })
 
-    if (filters?.unit_id) {
-      query = query.eq("unit_id", filters.unit_id)
-    }
-
-    if (filters?.service_type && filters.service_type !== "all") {
-      query = query.eq("service_type", filters.service_type)
-    }
-
-    if (filters?.severity && filters.severity !== "all") {
-      query = query.eq("severity", filters.severity)
-    }
-
-    if (filters?.technician && filters.technician !== "all") {
-      query = query.eq("technician", filters.technician)
-    }
-
-    if (filters?.status && filters.status !== "all") {
-      query = query.eq("status", filters.status)
-    }
-
-    if (filters?.date_from) {
-      query = query.gte("service_date", filters.date_from)
-    }
-
-    if (filters?.date_to) {
-      query = query.lte("service_date", filters.date_to)
-    }
+    if (filters?.unit_id) query = query.eq("unit_id", filters.unit_id)
+    if (filters?.service_type && filters.service_type !== "all") query = query.eq("service_type", filters.service_type)
+    if (filters?.severity && filters.severity !== "all") query = query.eq("severity", filters.severity)
+    if (filters?.technician && filters.technician !== "all") query = query.eq("technician", filters.technician)
+    if (filters?.status && filters.status !== "all") query = query.eq("status", filters.status)
+    if (filters?.date_from) query = query.gte("service_date", filters.date_from)
+    if (filters?.date_to) query = query.lte("service_date", filters.date_to)
 
     const { data: services, error } = await query
 
@@ -194,10 +175,10 @@ export async function getServices(filters?: {
       throw new Error(`Error fetching services: ${error.message}`)
     }
 
-    return { success: true, data: services || [] }
+    return { success: true, data: (services ?? []) as Service[] }
   } catch (error) {
     console.error("Error in getServices:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as Service[] }
   }
 }
 
@@ -221,7 +202,7 @@ export async function getServiceById(id: string) {
       throw new Error(`Error fetching service: ${error.message}`)
     }
 
-    return { success: true, data: service }
+    return { success: true, data: service as Service }
   } catch (error) {
     console.error("Error in getServiceById:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
@@ -243,11 +224,27 @@ export async function getServicesByUnit(unitId: string) {
       throw new Error(`Error fetching services by unit: ${error.message}`)
     }
 
-    return { success: true, data: services || [] }
+    return { success: true, data: (services ?? []) as Service[] }
   } catch (error) {
     console.error("Error in getServicesByUnit:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as Service[] }
   }
+}
+
+export type ServicesSummary = {
+  total: number
+  corrective: number
+  preventive: number
+  inspection: number
+  repair: number
+  low_severity: number
+  medium_severity: number
+  high_severity: number
+  critical_severity: number
+  total_cost: number
+  total_labor_hours: number
+  total_downtime: number
+  average_cost: number
 }
 
 export async function getServicesSummary(filters?: { date_from?: string; date_to?: string }) {
@@ -256,34 +253,32 @@ export async function getServicesSummary(filters?: { date_from?: string; date_to
   try {
     let query = supabase.from("services").select("service_type, severity, total_cost, labor_hours, downtime_hours")
 
-    if (filters?.date_from) {
-      query = query.gte("service_date", filters.date_from)
-    }
-
-    if (filters?.date_to) {
-      query = query.lte("service_date", filters.date_to)
-    }
+    if (filters?.date_from) query = query.gte("service_date", filters.date_from)
+    if (filters?.date_to) query = query.lte("service_date", filters.date_to)
 
     const { data: services, error } = await query
+    if (error) throw new Error(`Error fetching services summary: ${error.message}`)
 
-    if (error) {
-      throw new Error(`Error fetching services summary: ${error.message}`)
-    }
+    type Row = Pick<
+      Service,
+      "service_type" | "severity" | "total_cost" | "labor_hours" | "downtime_hours"
+    >
 
-    const summary = {
-      total: services?.length || 0,
-      corrective: services?.filter((s) => s.service_type === "corrective").length || 0,
-      preventive: services?.filter((s) => s.service_type === "preventive").length || 0,
-      inspection: services?.filter((s) => s.service_type === "inspection").length || 0,
-      repair: services?.filter((s) => s.service_type === "repair").length || 0,
-      low_severity: services?.filter((s) => s.severity === "low").length || 0,
-      medium_severity: services?.filter((s) => s.severity === "medium").length || 0,
-      high_severity: services?.filter((s) => s.severity === "high").length || 0,
-      critical_severity: services?.filter((s) => s.severity === "critical").length || 0,
-      total_cost: services?.reduce((sum, s) => sum + (s.total_cost || 0), 0) || 0,
-      total_labor_hours: services?.reduce((sum, s) => sum + (s.labor_hours || 0), 0) || 0,
-      total_downtime: services?.reduce((sum, s) => sum + (s.downtime_hours || 0), 0) || 0,
-      average_cost: services?.length ? services.reduce((sum, s) => sum + (s.total_cost || 0), 0) / services.length : 0,
+    const list = (services ?? []) as Row[]
+    const summary: ServicesSummary = {
+      total: list.length,
+      corrective: list.filter((s) => s.service_type === "corrective").length,
+      preventive: list.filter((s) => s.service_type === "preventive").length,
+      inspection: list.filter((s) => s.service_type === "inspection").length,
+      repair: list.filter((s) => s.service_type === "repair").length,
+      low_severity: list.filter((s) => s.severity === "low").length,
+      medium_severity: list.filter((s) => s.severity === "medium").length,
+      high_severity: list.filter((s) => s.severity === "high").length,
+      critical_severity: list.filter((s) => s.severity === "critical").length,
+      total_cost: list.reduce((sum, s) => sum + (s.total_cost ?? 0), 0),
+      total_labor_hours: list.reduce((sum, s) => sum + (s.labor_hours ?? 0), 0),
+      total_downtime: list.reduce((sum, s) => sum + (s.downtime_hours ?? 0), 0),
+      average_cost: list.length ? list.reduce((sum, s) => sum + (s.total_cost ?? 0), 0) / list.length : 0,
     }
 
     return { success: true, data: summary }
@@ -297,19 +292,30 @@ export async function getTechnicians() {
   const supabase = createServerClient()
 
   try {
-    const { data: services, error } = await supabase.from("services").select("technician").not("technician", "is", null)
+    const { data: services, error } = await supabase
+      .from("services")
+      .select("technician")
+      .not("technician", "is", null)
 
-    if (error) {
-      throw new Error(`Error fetching technicians: ${error.message}`)
-    }
+    if (error) throw new Error(`Error fetching technicians: ${error.message}`)
 
-    const technicians = [...new Set(services?.map((s) => s.technician).filter(Boolean))] || []
-
+    const technicians = [...new Set(((services ?? []) as { technician: string | null }[])
+      .map((s) => s.technician)
+      .filter(Boolean) as string[])]
     return { success: true, data: technicians }
   } catch (error) {
     console.error("Error in getTechnicians:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as string[] }
   }
+}
+
+export type TechnicianStats = {
+  name: string
+  total_services: number
+  total_cost: number
+  total_hours: number
+  corrective: number
+  preventive: number
 }
 
 export async function getServicesByTechnician(filters?: { date_from?: string; date_to?: string }) {
@@ -318,47 +324,38 @@ export async function getServicesByTechnician(filters?: { date_from?: string; da
   try {
     let query = supabase.from("services").select("technician, total_cost, labor_hours, service_type")
 
-    if (filters?.date_from) {
-      query = query.gte("service_date", filters.date_from)
-    }
-
-    if (filters?.date_to) {
-      query = query.lte("service_date", filters.date_to)
-    }
+    if (filters?.date_from) query = query.gte("service_date", filters.date_from)
+    if (filters?.date_to) query = query.lte("service_date", filters.date_to)
 
     const { data: services, error } = await query
+    if (error) throw new Error(`Error fetching services by technician: ${error.message}`)
 
-    if (error) {
-      throw new Error(`Error fetching services by technician: ${error.message}`)
-    }
+    type Row = Pick<Service, "technician" | "total_cost" | "labor_hours" | "service_type">
 
-    const technicianStats = services?.reduce(
-      (acc, service) => {
-        const tech = service.technician || "Sin asignar"
-        if (!acc[tech]) {
-          acc[tech] = {
-            name: tech,
-            total_services: 0,
-            total_cost: 0,
-            total_hours: 0,
-            corrective: 0,
-            preventive: 0,
-          }
+    const technicianStats = ((services ?? []) as Row[]).reduce<Record<string, TechnicianStats>>((acc, service) => {
+      const tech = service.technician || "Sin asignar"
+      if (!acc[tech]) {
+        acc[tech] = {
+          name: tech,
+          total_services: 0,
+          total_cost: 0,
+          total_hours: 0,
+          corrective: 0,
+          preventive: 0,
         }
-        acc[tech].total_services++
-        acc[tech].total_cost += service.total_cost || 0
-        acc[tech].total_hours += service.labor_hours || 0
-        if (service.service_type === "corrective") acc[tech].corrective++
-        if (service.service_type === "preventive") acc[tech].preventive++
-        return acc
-      },
-      {} as Record<string, any>,
-    )
+      }
+      acc[tech].total_services += 1
+      acc[tech].total_cost += service.total_cost ?? 0
+      acc[tech].total_hours += service.labor_hours ?? 0
+      if (service.service_type === "corrective") acc[tech].corrective += 1
+      if (service.service_type === "preventive") acc[tech].preventive += 1
+      return acc
+    }, {})
 
-    return { success: true, data: Object.values(technicianStats || {}) }
+    return { success: true, data: Object.values(technicianStats) }
   } catch (error) {
     console.error("Error in getServicesByTechnician:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as TechnicianStats[] }
   }
 }
 
@@ -373,36 +370,32 @@ export async function getMonthlyCosts(year?: number) {
       .gte("service_date", `${currentYear}-01-01`)
       .lte("service_date", `${currentYear}-12-31`)
 
-    if (error) {
-      throw new Error(`Error fetching monthly costs: ${error.message}`)
-    }
+    if (error) throw new Error(`Error fetching monthly costs: ${error.message}`)
 
-    const monthlyCosts = Array.from({ length: 12 }, (_, i) => ({
+    const monthlyCosts: { month: string; cost: number }[] = Array.from({ length: 12 }, (_, i) => ({
       month: new Date(currentYear, i).toLocaleString("es", { month: "short" }),
       cost: 0,
     }))
 
-    services?.forEach((service) => {
+    ;((services ?? []) as { service_date: string; total_cost: number | null }[]).forEach((service) => {
       const month = new Date(service.service_date).getMonth()
-      monthlyCosts[month].cost += service.total_cost || 0
+      monthlyCosts[month].cost += service.total_cost ?? 0
     })
 
     return { success: true, data: monthlyCosts }
   } catch (error) {
     console.error("Error in getMonthlyCosts:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as { month: string; cost: number }[] }
   }
 }
 
-async function updateUnitAfterService(unitId: string, serviceDate: string) {
+// Quitamos el parámetro no usado `serviceDate`
+async function updateUnitAfterService(unitId: string) {
   const supabase = createServerClient()
-
   try {
     await supabase
       .from("units")
-      .update({
-        updated_at: new Date().toISOString(),
-      })
+      .update({ updated_at: new Date().toISOString() })
       .eq("id", unitId)
   } catch (error) {
     console.error("Error updating unit after service:", error)
@@ -413,24 +406,33 @@ export async function completeService(id: string, data: { notes?: string; actual
   const supabase = createServerClient()
 
   try {
-    const updateData: any = {
+    type UpdatePayload = {
+      status: "completed"
+      updated_at: string
+      notes?: string
+      total_cost?: number
+    }
+
+    const updateData: UpdatePayload = {
       status: "completed",
       updated_at: new Date().toISOString(),
     }
-
     if (data.notes) updateData.notes = data.notes
-    if (data.actual_cost) updateData.total_cost = data.actual_cost
+    if (typeof data.actual_cost === "number") updateData.total_cost = data.actual_cost
 
-    const { data: service, error } = await supabase.from("services").update(updateData).eq("id", id).select().single()
+    const { data: service, error } = await supabase
+      .from("services")
+      .update(updateData)
+      .eq("id", id)
+      .select()
+      .single()
 
-    if (error) {
-      throw new Error(`Error completing service: ${error.message}`)
-    }
+    if (error) throw new Error(`Error completing service: ${error.message}`)
 
     revalidatePath("/services")
     revalidatePath("/units")
     revalidatePath("/")
-    return { success: true, data: service }
+    return { success: true, data: service as Service }
   } catch (error) {
     console.error("Error in completeService:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }

@@ -1,3 +1,4 @@
+// app/anomalies/page.tsx
 "use client"
 
 import { useState } from "react"
@@ -17,7 +18,8 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Sidebar } from "@/components/sidebar"
+// ⬇️ Importar el sidebar como default
+import Sidebar from "@/components/sidebar"
 import { Plus, Search, AlertTriangle, User, Clock, DollarSign, Filter } from "lucide-react"
 
 // Mock data for anomalies
