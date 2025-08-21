@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import Image from "next/image" // 👈 Importamos Image de Next.js
 
 const navigationItems = [
   { title: "Dashboard", icon: LayoutDashboard, href: "/" },
@@ -46,9 +47,15 @@ export default function SidebarClient() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-sidebar-border bg-sidebar">
         {!collapsed && (
-          <div>
-            <h2 className="text-lg font-bold text-sidebar-foreground">SistemaMC</h2>
-            <p className="text-xs text-muted-foreground">Gestión Industrial</p>
+          <div className="flex items-center gap-2">
+            {/* 👇 Logo en lugar de texto */}
+            <Image
+              src="/cemex-1.svg"
+              alt="Logo"
+              width={120}   // ajusta según el tamaño que quieras
+              height={40}
+              priority
+            />
           </div>
         )}
         <div className="flex items-center gap-2">

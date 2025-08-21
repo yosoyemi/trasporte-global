@@ -1,4 +1,3 @@
-// lib/actions/maintenance.ts
 "use server"
 
 import { createServerClient } from "@/lib/supabase/server"
@@ -9,11 +8,11 @@ export type MaintenanceSchedule = {
   unit_id: string
   maintenance_type: "preventive" | "corrective"
   interval_hours: number
-  last_service_hours: number
+  last_service_hours: number | null
   next_service_hours: number
   status: "pending" | "overdue" | "completed"
-  description: string
-  estimated_cost: number
+  description: string | null
+  estimated_cost: number | null
   created_at: string
   updated_at: string
   unit?: {
@@ -21,7 +20,7 @@ export type MaintenanceSchedule = {
     brand: string
     model: string
     current_hours: number
-  }
+  } | null
 }
 
 export type CreateMaintenanceData = {
@@ -47,10 +46,10 @@ export async function createMaintenanceSchedule(data: CreateMaintenanceData) {
       .select("current_hours")
       .eq("id", data.unit_id)
       .single()
-
     if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
-    const status = unit.current_hours >= data.next_service_hours ? "overdue" : "pending"
+    const status: MaintenanceSchedule["status"] =
+      (unit?.current_hours ?? 0) >= data.next_service_hours ? "overdue" : "pending"
 
     const { data: maintenance, error } = await supabase
       .from("maintenance_schedules")
@@ -62,9 +61,8 @@ export async function createMaintenanceSchedule(data: CreateMaintenanceData) {
 
     revalidatePath("/maintenance")
     revalidatePath("/")
-    return { success: true, data: maintenance }
+    return { success: true, data: maintenance as MaintenanceSchedule }
   } catch (error) {
-    console.error("Error in createMaintenanceSchedule:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
@@ -75,18 +73,16 @@ export async function updateMaintenanceSchedule(data: UpdateMaintenanceData) {
     const { id, ...updateData } = data
     const { data: maintenance, error } = await supabase
       .from("maintenance_schedules")
-      .update(updateData)
+      .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
       .single()
-
     if (error) throw new Error(error.message || "Failed to update maintenance schedule")
 
     revalidatePath("/maintenance")
     revalidatePath("/")
-    return { success: true, data: maintenance }
+    return { success: true, data: maintenance as MaintenanceSchedule }
   } catch (error) {
-    console.error("Error in updateMaintenanceSchedule:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
@@ -97,6 +93,7 @@ export async function completeMaintenanceSchedule(
 ) {
   const supabase = createServerClient()
   try {
+    // 1) Traer mantenimiento + unidad
     const { data: currentMaintenance, error: fetchError } = await supabase
       .from("maintenance_schedules")
       .select("unit_id, interval_hours, next_service_hours")
@@ -106,45 +103,47 @@ export async function completeMaintenanceSchedule(
 
     const { data: unit, error: unitError } = await supabase
       .from("units")
-      .select("current_hours")
+      .select("current_hours, brand, model")
       .eq("id", currentMaintenance.unit_id)
       .single()
     if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
+    // 2) Marcar como completado
     const { error: updateError } = await supabase
       .from("maintenance_schedules")
-      .update({ status: "completed" })
+      .update({ status: "completed", updated_at: new Date().toISOString() })
       .eq("id", id)
     if (updateError) throw new Error(updateError.message || "Failed to complete maintenance")
 
+    // 3) Registrar servicio (histórico)
+    const description = `Mantenimiento preventivo ${currentMaintenance.interval_hours}h - ${unit.brand} ${unit.model}`
     const { error: serviceError } = await supabase.from("services").insert([
       {
         unit_id: currentMaintenance.unit_id,
         service_type: "preventive",
-        service_date: new Date().toISOString().split("T")[0],
-        hours_at_service: unit.current_hours,
+        service_date: new Date().toISOString().slice(0, 10),
+        hours_at_service: unit.current_hours ?? 0,
         technician: data.technician,
-        description: `Mantenimiento preventivo ${currentMaintenance.interval_hours}h completado`,
+        description,
         total_cost: data.actual_cost,
-        notes: data.notes,
+        notes: data.notes ?? null,
         status: "completed",
       },
     ])
     if (serviceError) console.error("Error creating service record:", serviceError)
 
+    // 4) Crear siguiente mantenimiento
     await createNextMaintenanceSchedule(
       currentMaintenance.unit_id,
       currentMaintenance.interval_hours,
-      unit.current_hours,
+      unit.current_hours ?? 0,
     )
 
     revalidatePath("/maintenance")
     revalidatePath("/units")
-    revalidatePath("/services")
     revalidatePath("/")
     return { success: true }
   } catch (error) {
-    console.error("Error in completeMaintenanceSchedule:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
@@ -157,10 +156,7 @@ async function createNextMaintenanceSchedule(unitId: string, intervalHours: numb
       .select("brand, model")
       .eq("id", unitId)
       .single()
-    if (unitError) {
-      console.error("Error fetching unit for next maintenance:", unitError)
-      return
-    }
+    if (unitError) return
 
     const nextServiceHours = currentHours + intervalHours
     const description = `Mantenimiento preventivo ${intervalHours}h - ${unit.brand} ${unit.model}`
@@ -177,8 +173,8 @@ async function createNextMaintenanceSchedule(unitId: string, intervalHours: numb
         estimated_cost: getEstimatedCostByInterval(intervalHours),
       },
     ])
-  } catch (error) {
-    console.error("Error creating next maintenance schedule:", error)
+  } catch {
+    // opcional: log
   }
 }
 
@@ -221,10 +217,9 @@ export async function getMaintenanceSchedules(filters?: {
     const { data: schedules, error } = await query
     if (error) throw new Error(error.message || "Failed to fetch maintenance schedules")
 
-    return { success: true, data: schedules || [] }
+    return { success: true, data: (schedules ?? []) as MaintenanceSchedule[] }
   } catch (error) {
-    console.error("Error in getMaintenanceSchedules:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] }
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error", data: [] as MaintenanceSchedule[] }
   }
 }
 
@@ -244,9 +239,8 @@ export async function getMaintenanceById(id: string) {
 
     if (error) throw new Error(error.message || "Failed to fetch maintenance by id")
 
-    return { success: true, data: maintenance }
+    return { success: true, data: maintenance as MaintenanceSchedule }
   } catch (error) {
-    console.error("Error in getMaintenanceById:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
@@ -261,7 +255,7 @@ export async function schedulePreventiveMaintenance(unitId: string, intervalHour
       .single()
     if (unitError) throw new Error(unitError.message || "Failed to fetch unit")
 
-    const nextMultiple = Math.ceil((unit.current_hours + 1) / intervalHours) * intervalHours
+    const nextMultiple = Math.ceil(((unit?.current_hours ?? 0) + 1) / intervalHours) * intervalHours
     const nextServiceHours = nextMultiple
     const description = `Mantenimiento preventivo ${intervalHours}h - ${unit.brand} ${unit.model}`
 
@@ -269,7 +263,7 @@ export async function schedulePreventiveMaintenance(unitId: string, intervalHour
       unit_id: unitId,
       maintenance_type: "preventive",
       interval_hours: intervalHours,
-      last_service_hours: unit.current_hours,
+      last_service_hours: unit?.current_hours ?? 0,
       next_service_hours: nextServiceHours,
       description,
       estimated_cost: getEstimatedCostByInterval(intervalHours),
@@ -277,7 +271,6 @@ export async function schedulePreventiveMaintenance(unitId: string, intervalHour
 
     return await createMaintenanceSchedule(maintenanceData)
   } catch (error) {
-    console.error("Error in schedulePreventiveMaintenance:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
@@ -299,7 +292,6 @@ export async function getMaintenanceSummary() {
 
     return { success: true, data: summary }
   } catch (error) {
-    console.error("Error in getMaintenanceSummary:", error)
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
   }
 }

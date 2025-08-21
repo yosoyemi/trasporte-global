@@ -1,4 +1,3 @@
-// my-app/components/add-unit-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -15,42 +14,59 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Plus } from "lucide-react"
-import { createUnit } from "@/lib/actions/units"
+import { createUnit, uploadUnitImageAction } from "@/lib/actions/units"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 type FuelType = "electric" | "gas" | "diesel"
 type UnitStatus = "active" | "maintenance" | "inactive"
 
-export function AddUnitDialog() {
+export default function AddUnitDialog() {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [fuelType, setFuelType] = useState<FuelType | "">("")
   const [status, setStatus] = useState<UnitStatus>("active")
+  const [file, setFile] = useState<File | null>(null)
   const router = useRouter()
+
+  const toInt = (v: FormDataEntryValue | null, fallback = 0) => {
+    const n = Number.parseInt((v ?? "").toString(), 10)
+    return Number.isFinite(n) ? n : fallback
+  }
 
   async function handleSubmit(formData: FormData) {
     setIsLoading(true)
-
     try {
       const data = {
-        unit_number: formData.get("unit_number") as string,
-        brand: formData.get("brand") as string,
-        model: formData.get("model") as string,
-        serial_number: formData.get("serial_number") as string,
-        year: Number.parseInt(formData.get("year") as string),
-        capacity_kg: Number.parseInt(formData.get("capacity_kg") as string),
-        fuel_type: formData.get("fuel_type") as FuelType,
-        current_hours: Number.parseInt(formData.get("current_hours") as string),
-        status: formData.get("status") as UnitStatus,
-        location: formData.get("location") as string,
+        unit_number: (formData.get("unit_number") as string).trim(),
+        brand: (formData.get("brand") as string).trim(),
+        model: (formData.get("model") as string).trim(),
+        serial_number: (formData.get("serial_number") as string).trim(),
+        year: toInt(formData.get("year")),
+        capacity_kg: toInt(formData.get("capacity_kg")),
+        fuel_type: (formData.get("fuel_type") as FuelType) || "diesel",
+        current_hours: toInt(formData.get("current_hours")),
+        status: (formData.get("status") as UnitStatus) || "active",
+        location: (formData.get("location") as string).trim(),
       }
 
       const result = await createUnit(data)
 
-      if (result.success) {
+      if (result.success && result.data) {
+        // Subir imagen si el usuario seleccionó archivo
+        if (file) {
+          const fd = new FormData()
+          fd.append("unitId", result.data.id)
+          fd.append("file", file)
+          const up = await uploadUnitImageAction(fd)
+          if (!up.success) {
+            toast.error(up.error || "No se pudo subir la imagen")
+          }
+        }
+
         toast.success("Unidad creada exitosamente")
         setIsOpen(false)
+        setFile(null)
         router.refresh()
       } else {
         toast.error(result.error || "Error al crear la unidad")
@@ -107,8 +123,8 @@ export function AddUnitDialog() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="fuel_type">Tipo de Combustible *</Label>
-              <Select value={fuelType} onValueChange={(v: FuelType) => setFuelType(v)} required>
+              <Label>Tipo de Combustible *</Label>
+              <Select value={fuelType} onValueChange={(v: FuelType) => setFuelType(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar tipo" />
                 </SelectTrigger>
@@ -126,8 +142,8 @@ export function AddUnitDialog() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="status">Estado *</Label>
-              <Select value={status} onValueChange={(v: UnitStatus) => setStatus(v)} required>
+              <Label>Estado *</Label>
+              <Select value={status} onValueChange={(v: UnitStatus) => setStatus(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar estado" />
                 </SelectTrigger>
@@ -143,14 +159,20 @@ export function AddUnitDialog() {
               <Label htmlFor="location">Ubicación *</Label>
               <Input id="location" name="location" placeholder="Almacén Principal" required />
             </div>
+
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="image">Imagen (opcional)</Label>
+              <Input
+                id="image"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+            </div>
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={isLoading || !fuelType || !status}
-            >
+            <Button type="submit" className="flex-1" disabled={isLoading || !fuelType || !status}>
               {isLoading ? "Guardando..." : "Guardar"}
             </Button>
             <Button

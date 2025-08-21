@@ -1,4 +1,3 @@
-// components/schedule-maintenance-dialog.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -35,13 +34,11 @@ export function ScheduleMaintenanceDialog({ units }: { units: UnitOption[] }) {
   const [nextServiceHours, setNextServiceHours] = useState<number | null>(null)
   const router = useRouter()
 
-  // Recalcular el próximo servicio cuando cambie unidad/intervalo
   useEffect(() => {
     if (selectedUnit && selectedInterval) {
       const unit = units.find((u) => u.id === selectedUnit)
       if (unit) {
         const intervalHours = Number.parseInt(selectedInterval)
-        // siguiente múltiplo estrictamente mayor que el actual
         const nextHours = Math.ceil((unit.current_hours + 1) / intervalHours) * intervalHours
         setNextServiceHours(nextHours)
       }

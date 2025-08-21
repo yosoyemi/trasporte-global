@@ -1,4 +1,3 @@
-// app/maintenance/page.tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,17 +16,18 @@ type RawSearchParams = Record<string, string | string[] | undefined>
 
 type ScheduleRow = {
   id: string
-  status: "pending" | "overdue" | "completed"
+  maintenance_type: "preventive" | "corrective"
   interval_hours: number
-  scheduled_hours?: number | null
-  current_unit_hours?: number | null
-  scheduled_date?: string | null
-  estimated_cost?: number | null
-  actual_cost?: number | null
+  last_service_hours: number | null
+  next_service_hours: number
+  status: "pending" | "overdue" | "completed"
+  description: string | null
+  estimated_cost: number | null
   unit?: {
     unit_number?: string | null
     brand?: string | null
     model?: string | null
+    current_hours?: number | null
   } | null
 }
 
@@ -40,11 +40,7 @@ type Summary = {
   corrective: number
 }
 
-export default async function MaintenancePage(props: {
-  // Next 15: Promise o undefined
-  searchParams?: Promise<RawSearchParams>
-}) {
-  // Normalizamos (si viene undefined, usamos {}).
+export default async function MaintenancePage(props: { searchParams?: Promise<RawSearchParams> }) {
   const sp: RawSearchParams = await (props.searchParams ?? Promise.resolve({} as RawSearchParams))
 
   const status = typeof sp.status === "string" ? sp.status : "all"
@@ -73,30 +69,27 @@ export default async function MaintenancePage(props: {
         }))
       : []
 
+  // Calcula el badge de estado en vivo con horas actuales vs. próximas
   const getStatusBadge = (schedule: ScheduleRow) => {
     if (schedule.status === "completed") {
       return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completado</Badge>
     }
-    if (schedule.status === "overdue") {
-      return <Badge variant="destructive">Vencido</Badge>
-    }
-    const current = schedule.current_unit_hours ?? 0
-    const target = schedule.scheduled_hours ?? Number.POSITIVE_INFINITY
+    const current = schedule.unit?.current_hours ?? 0
+    const target = schedule.next_service_hours
     if (current >= target) {
       return <Badge variant="destructive">Vencido</Badge>
     }
     const hoursRemaining = target - current
-    if (Number.isFinite(hoursRemaining) && hoursRemaining <= 50) {
+    if (hoursRemaining <= 50) {
       return <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">Próximo</Badge>
     }
     return <Badge variant="outline">Programado</Badge>
   }
 
   const upcomingCount = schedules.filter((s) => {
-    if (s.status !== "pending") return false
-    const current = s.current_unit_hours ?? 0
-    const target = s.scheduled_hours ?? Number.POSITIVE_INFINITY
-    return Number.isFinite(target) && target - current <= 50
+    if (s.status === "completed") return false
+    const current = s.unit?.current_hours ?? 0
+    return current < s.next_service_hours && s.next_service_hours - current <= 50
   }).length
 
   return (
@@ -183,57 +176,40 @@ export default async function MaintenancePage(props: {
                       <TableRow>
                         <TableHead>Unidad</TableHead>
                         <TableHead>Tipo</TableHead>
-                        <TableHead>Horómetro Objetivo</TableHead>
+                        <TableHead>Próximo Servicio</TableHead>
                         <TableHead>Horómetro Actual</TableHead>
                         <TableHead>Estado</TableHead>
-                        <TableHead>Fecha Programada</TableHead>
                         <TableHead>Costo Estimado</TableHead>
                         <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {schedules.map((schedule) => (
-                        <TableRow key={schedule.id}>
+                      {schedules.map((s) => (
+                        <TableRow key={s.id}>
                           <TableCell className="font-medium">
-                            {schedule.unit?.unit_number || "N/A"}
+                            {s.unit?.unit_number || "N/A"}
                             <div className="text-sm text-muted-foreground">
-                              {schedule.unit?.brand} {schedule.unit?.model}
+                              {s.unit?.brand} {s.unit?.model}
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{schedule.interval_hours}h</Badge>
+                            <Badge variant="outline">{s.interval_hours}h</Badge>
                           </TableCell>
-                          <TableCell>
-                            {typeof schedule.scheduled_hours === "number"
-                              ? `${schedule.scheduled_hours.toLocaleString()}h`
-                              : "—"}
-                          </TableCell>
+                          <TableCell>{s.next_service_hours.toLocaleString()}h</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-muted-foreground" />
-                              {typeof schedule.current_unit_hours === "number"
-                                ? `${schedule.current_unit_hours.toLocaleString()}h`
-                                : "—"}
+                              {(s.unit?.current_hours ?? 0).toLocaleString()}h
                             </div>
                           </TableCell>
-                          <TableCell>{getStatusBadge(schedule)}</TableCell>
-                          <TableCell>
-                            {schedule.scheduled_date
-                              ? new Date(schedule.scheduled_date).toLocaleDateString("es-ES")
-                              : "—"}
-                          </TableCell>
-                          <TableCell>
-                            $
-                            {schedule.status === "completed" && typeof schedule.actual_cost === "number"
-                              ? schedule.actual_cost.toFixed(2)
-                              : (schedule.estimated_cost ?? 0).toFixed(2)}
-                          </TableCell>
+                          <TableCell>{getStatusBadge(s)}</TableCell>
+                          <TableCell>${(s.estimated_cost ?? 0).toFixed(2)}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              {schedule.status !== "completed" && (
-                                <CompleteMaintenanceDialog maintenanceId={schedule.id} />
+                              {s.status !== "completed" && (
+                                <CompleteMaintenanceDialog maintenanceId={s.id} />
                               )}
-                              <Button size="sm" variant="outline">
+                              <Button size="sm" variant="outline" title="Detalle">
                                 <Wrench className="h-4 w-4" />
                               </Button>
                             </div>

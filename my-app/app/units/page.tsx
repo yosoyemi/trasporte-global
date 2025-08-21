@@ -1,4 +1,3 @@
-// app/units/page.tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -7,8 +6,9 @@ import Sidebar from "@/components/sidebar"
 import { Eye, Edit, Truck, Clock, Wrench } from "lucide-react"
 import { getUnits, getUnitsSummary } from "@/lib/actions/units"
 import { UnitsFilters } from "@/components/units-filters"
-import { AddUnitDialog } from "@/components/add-unit-dialog"
+import AddUnitDialog from "@/components/add-unit-dialog"   // <— default import
 import Link from "next/link"
+import UnitImage from "@/components/unit-image"
 
 type RawSearchParams = Record<string, string | string[] | undefined>
 
@@ -21,6 +21,7 @@ type UnitRow = {
   current_hours: number
   status: "active" | "maintenance" | "inactive" | string
   next_service_hours: number | null
+  image_url?: string | null
 }
 
 type Summary = {
@@ -31,7 +32,6 @@ type Summary = {
 }
 
 export default async function UnitsPage(props: { searchParams?: Promise<RawSearchParams> }) {
-  // Normaliza searchParams (Next 15 lo entrega como Promise)
   const sp: RawSearchParams = await (props.searchParams ?? Promise.resolve({} as RawSearchParams))
 
   const search = typeof sp.search === "string" ? sp.search : ""
@@ -63,7 +63,7 @@ export default async function UnitsPage(props: { searchParams?: Promise<RawSearc
   }
 
   const getServiceStatus = (currentHours: number, nextServiceHours: number | null) => {
-    if (!nextServiceHours) return <Badge variant="outline">Sin programar</Badge>
+    if (nextServiceHours == null) return <Badge variant="outline">Sin programar</Badge>
     const hoursUntilService = nextServiceHours - currentHours
     if (hoursUntilService <= 0) return <Badge variant="destructive">Vencido</Badge>
     if (hoursUntilService <= 50)
@@ -72,7 +72,7 @@ export default async function UnitsPage(props: { searchParams?: Promise<RawSearc
   }
 
   const unitsNeedingService = units.filter(
-    (u) => u.next_service_hours && u.next_service_hours - u.current_hours <= 50,
+    (u) => u.next_service_hours != null && u.next_service_hours - u.current_hours <= 50,
   ).length
 
   return (
@@ -159,7 +159,19 @@ export default async function UnitsPage(props: { searchParams?: Promise<RawSearc
                 <TableBody>
                   {units.map((unit) => (
                     <TableRow key={unit.id}>
-                      <TableCell className="font-medium">{unit.unit_number}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-14 overflow-hidden rounded border bg-muted">
+                            <UnitImage
+                              src={unit.image_url || undefined}
+                              alt={`${unit.unit_number}`}
+                              className="h-full w-full object-cover"
+                              fallbackClassName="h-full w-full"
+                            />
+                          </div>
+                          {unit.unit_number}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div>
                           <div className="font-medium">{unit.brand}</div>
@@ -170,17 +182,17 @@ export default async function UnitsPage(props: { searchParams?: Promise<RawSearc
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-muted-foreground" />
-                          {unit.current_hours.toLocaleString()}h
+                          {Number(unit.current_hours || 0).toLocaleString()}h
                         </div>
                       </TableCell>
                       <TableCell>{getStatusBadge(unit.status)}</TableCell>
                       <TableCell>
-                        {unit.next_service_hours ? (
+                        {unit.next_service_hours != null ? (
                           <div>
-                            <div className="font-medium">{unit.next_service_hours.toLocaleString()}h</div>
+                            <div className="font-medium">{Number(unit.next_service_hours).toLocaleString()}h</div>
                             <div className="text-sm text-muted-foreground">
-                              {unit.next_service_hours - unit.current_hours > 0
-                                ? `En ${unit.next_service_hours - unit.current_hours}h`
+                              {unit.next_service_hours - (unit.current_hours || 0) > 0
+                                ? `En ${unit.next_service_hours - (unit.current_hours || 0)}h`
                                 : "Vencido"}
                             </div>
                           </div>
@@ -188,7 +200,7 @@ export default async function UnitsPage(props: { searchParams?: Promise<RawSearc
                           <div className="text-sm text-muted-foreground">Sin programar</div>
                         )}
                       </TableCell>
-                      <TableCell>{getServiceStatus(unit.current_hours, unit.next_service_hours)}</TableCell>
+                      <TableCell>{getServiceStatus(unit.current_hours || 0, unit.next_service_hours)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" asChild>

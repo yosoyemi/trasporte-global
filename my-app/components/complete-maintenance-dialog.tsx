@@ -1,4 +1,3 @@
-// my-app/components/complete-maintenance-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -32,8 +31,8 @@ export function CompleteMaintenanceDialog({ maintenanceId }: CompleteMaintenance
     setIsLoading(true)
     try {
       const data = {
-        actual_cost: Number.parseFloat(formData.get("actual_cost") as string),
-        technician: formData.get("technician") as string,
+        actual_cost: Number.parseFloat((formData.get("actual_cost") as string) || "0"),
+        technician: (formData.get("technician") as string) || "",
         notes: (formData.get("notes") as string) || undefined,
       }
 

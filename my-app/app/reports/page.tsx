@@ -1,62 +1,93 @@
-// my-app/app/reports/page.tsx
-"use client"
-
-import { useState } from "react"
+// app/reports/page.tsx
+import Sidebar from "@/components/sidebar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import Sidebar from "@/components/sidebar"
-import { Download, AlertTriangle, Clock, DollarSign, TrendingUp, Calendar, Wrench, Fuel, Bell } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { DollarSign, AlertTriangle, Clock, Bell, Calendar, TrendingUp } from "lucide-react"
 
-// Mock data for reports
-const upcomingMaintenanceReport = [
-  { unitNumber: "FL-001", maintenanceType: "500h", currentHours: 1250, scheduledHours: 1500, daysUntilDue: 5, estimatedCost: 320.0, priority: "medium" },
-  { unitNumber: "FL-003", maintenanceType: "1000h", currentHours: 2100, scheduledHours: 2000, daysUntilDue: -2, estimatedCost: 580.0, priority: "high" },
-  { unitNumber: "FL-007", maintenanceType: "250h", currentHours: 890, scheduledHours: 1000, daysUntilDue: 8, estimatedCost: 180.0, priority: "low" },
-  { unitNumber: "FL-012", maintenanceType: "2000h", currentHours: 1950, scheduledHours: 2000, daysUntilDue: 3, estimatedCost: 750.0, priority: "high" },
-]
+import ReportsPeriodPicker from "@/components/reports-period-picker"
+import CostCharts, { type PieItem } from "@/components/cost-charts"
+import ResolveAnomalyButton from "@/components/resolve-anomaly-button"
 
-const costSummaryReport = [
-  { category: "Mantenimientos Preventivos", amount: 2850.0, percentage: 45 },
-  { category: "Servicios Correctivos", amount: 1920.5, percentage: 30 },
-  { category: "Combustible", amount: 1280.75, percentage: 20 },
-  { category: "Repuestos y Materiales", amount: 320.25, percentage: 5 },
-]
+import { getMaintenanceSchedules } from "@/lib/actions/maintenance"
+import { getAnomalies } from "@/lib/actions/anomalies"
+import { getCostBreakdown, getMonthlyTrend, getDowntimeReport, periodToRange, type PeriodKey } from "@/lib/actions/costs"
 
-const monthlyTrendData = [
-  { month: "Oct", preventive: 1200, corrective: 800, fuel: 950 },
-  { month: "Nov", preventive: 1450, corrective: 650, fuel: 1100 },
-  { month: "Dic", preventive: 1100, corrective: 920, fuel: 1050 },
-  { month: "Ene", preventive: 1350, corrective: 750, fuel: 1200 },
-  { month: "Feb", preventive: 1250, corrective: 680, fuel: 1150 },
-  { month: "Mar", preventive: 1400, corrective: 580, fuel: 1280 },
-]
+type RawSearchParams = Record<string, string | string[] | undefined>
 
-const alertsData = [
-  { id: 1, type: "maintenance", severity: "high", title: "Mantenimiento Vencido", description: "FL-003 tiene mantenimiento de 1000h vencido por 2 días", unit: "FL-003", createdAt: "2024-03-15T10:30:00Z" },
-  { id: 2, type: "fuel", severity: "medium", title: "Eficiencia de Combustible Baja", description: "FL-005 muestra eficiencia por debajo del promedio (1.22 L/h)", unit: "FL-005", createdAt: "2024-03-14T14:20:00Z" },
-  { id: 3, type: "anomaly", severity: "high", title: "Anomalía Crítica Reportada", description: "FL-002 reporta fuga de aceite hidráulico en el mástil", unit: "FL-002", createdAt: "2024-03-14T09:15:00Z" },
-  { id: 4, type: "maintenance", severity: "medium", title: "Mantenimiento Próximo", description: "FL-012 requiere mantenimiento de 2000h en 3 días", unit: "FL-012", createdAt: "2024-03-13T16:45:00Z" },
-]
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<RawSearchParams> | RawSearchParams
+}) {
+  // Normaliza searchParams (acepta objeto o Promise)
+  const sp: RawSearchParams =
+    (searchParams &&
+      (typeof (searchParams as any).then === "function"
+        ? await (searchParams as Promise<RawSearchParams>)
+        : (searchParams as RawSearchParams))) ||
+    {}
 
-const downtimeReport = [
-  { unit: "FL-001", totalDowntime: 12, plannedDowntime: 8, unplannedDowntime: 4, availability: 95.2 },
-  { unit: "FL-002", totalDowntime: 18, plannedDowntime: 10, unplannedDowntime: 8, availability: 92.5 },
-  { unit: "FL-003", totalDowntime: 24, plannedDowntime: 16, unplannedDowntime: 8, availability: 90.0 },
-  { unit: "FL-004", totalDowntime: 8, plannedDowntime: 6, unplannedDowntime: 2, availability: 96.7 },
-  { unit: "FL-005", totalDowntime: 20, plannedDowntime: 12, unplannedDowntime: 8, availability: 91.7 },
-]
+  // period seguro a PeriodKey
+  const rawPeriod = typeof sp.period === "string" ? sp.period : "current_month"
+  const allowed: PeriodKey[] = ["current_month", "last_month", "quarter", "year"]
+  const period: PeriodKey = (allowed as string[]).includes(rawPeriod) ? (rawPeriod as PeriodKey) : "current_month"
 
-export default function ReportsPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState("current_month")
+  const { date_from, date_to } = periodToRange(period)
+
+  // Datos desde BD en paralelo
+  const [schedulesRes, anomaliesRes, monthlyTrend] = await Promise.all([
+    getMaintenanceSchedules(),
+    getAnomalies({ status: "open", date_from, date_to }),
+    getMonthlyTrend(),
+  ])
+
+  const breakdown = await getCostBreakdown(date_from, date_to)
+
+  // Próximos/vencidos por horas (a 50h)
+  const schedules = (schedulesRes.success ? (schedulesRes.data as any[]) : []).map((s) => {
+    const current = Number(s.unit?.current_hours ?? 0)
+    const target = Number(s.next_service_hours ?? 0)
+    const diff = target - current
+    return {
+      unitNumber: s.unit?.unit_number ?? "—",
+      maintenanceType: `${s.interval_hours}h`,
+      currentHours: current,
+      scheduledHours: target,
+      hoursUntilDue: diff,
+      estimatedCost: Number(s.estimated_cost ?? 0),
+    }
+  })
+
+  const overdueMaintenances = schedules.filter((m) => m.hoursUntilDue < 0).length
+  const upcomingMaintenances = schedules.filter((m) => m.hoursUntilDue >= 0 && m.hoursUntilDue <= 50).length
+
+  // Alertas (anomalías)
+  const anomalies = (anomaliesRes.success ? anomaliesRes.data : []).filter(
+    (a) => a.status === "open" || a.status === "in_progress",
+  )
+  const highSeverityAlerts = anomalies.filter((a) => a.severity === "high" || a.severity === "critical").length
+
+  const totalCosts = breakdown.total
+
+  // Pie de costos (usamos el breakdown)
+  const pie: PieItem[] = [
+    { category: "Mantenimientos Preventivos", amount: breakdown.preventive, percentage: 0 },
+    { category: "Servicios Correctivos", amount: breakdown.corrective, percentage: 0 },
+    { category: "Combustible", amount: breakdown.fuel, percentage: 0 },
+    { category: "Repuestos y Materiales", amount: breakdown.parts, percentage: 0 },
+  ]
+  const pieTotal = pie.reduce((s: number, x) => s + x.amount, 0) || 1
+  pie.forEach((x) => (x.percentage = Math.round((x.amount / pieTotal) * 100)))
+
+  // Downtime (agrupado por unidad)
+  const downtimeRows = await getDowntimeReport(date_from, date_to)
 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
+      case "critical":
+        return <Badge variant="destructive">Crítica</Badge>
       case "high":
         return <Badge variant="destructive">Alta</Badge>
       case "medium":
@@ -67,24 +98,6 @@ export default function ReportsPage() {
         return <Badge variant="secondary">{severity}</Badge>
     }
   }
-
-  const getAlertIcon = (type: string) => {
-    switch (type) {
-      case "maintenance":
-        return <Wrench className="h-4 w-4" />
-      case "fuel":
-        return <Fuel className="h-4 w-4" />
-      case "anomaly":
-        return <AlertTriangle className="h-4 w-4" />
-      default:
-        return <Bell className="h-4 w-4" />
-    }
-  }
-
-  const totalCosts = costSummaryReport.reduce((sum, item) => sum + item.amount, 0)
-  const overdueMaintenances = upcomingMaintenanceReport.filter((m) => m.daysUntilDue < 0).length
-  const upcomingMaintenances = upcomingMaintenanceReport.filter((m) => m.daysUntilDue >= 0 && m.daysUntilDue <= 7).length
-  const highSeverityAlerts = alertsData.filter((a) => a.severity === "high").length
 
   return (
     <div className="flex h-screen bg-background">
@@ -99,19 +112,9 @@ export default function ReportsPage() {
               <p className="text-muted-foreground mt-1">Análisis integral y alertas del sistema</p>
             </div>
             <div className="flex gap-2">
-              <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="current_month">Mes Actual</SelectItem>
-                  <SelectItem value="last_month">Mes Anterior</SelectItem>
-                  <SelectItem value="quarter">Trimestre</SelectItem>
-                  <SelectItem value="year">Año</SelectItem>
-                </SelectContent>
-              </Select>
+              <ReportsPeriodPicker value={period} />
               <Button className="gap-2">
-                <Download className="h-4 w-4" />
+                <DollarSign className="h-4 w-4" />
                 Exportar
               </Button>
             </div>
@@ -148,7 +151,7 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-orange-600">{upcomingMaintenances}</div>
-                <p className="text-xs text-muted-foreground">En los próximos 7 días</p>
+                <p className="text-xs text-muted-foreground">En las próximas 50 horas</p>
               </CardContent>
             </Card>
 
@@ -164,257 +167,197 @@ export default function ReportsPage() {
             </Card>
           </div>
 
-          {/* Tabs for different reports */}
-          <Tabs defaultValue="maintenance" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="maintenance">Mantenimientos</TabsTrigger>
-              <TabsTrigger value="costs">Costos</TabsTrigger>
-              <TabsTrigger value="alerts">Alertas</TabsTrigger>
-              <TabsTrigger value="downtime">Disponibilidad</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="maintenance" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" />
-                    Planificación de Mantenimientos
-                  </CardTitle>
-                  <CardDescription>Unidades próximas a mantenimiento y vencidas</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Unidad</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Horómetro Actual</TableHead>
-                        <TableHead>Horómetro Objetivo</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Costo Estimado</TableHead>
-                        <TableHead>Prioridad</TableHead>
+          {/* Bloques */}
+          <div className="space-y-4">
+            {/* Mantenimientos */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Planificación de Mantenimientos
+                </CardTitle>
+                <CardDescription>Unidades próximas por horas y vencidas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Unidad</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Horómetro Actual</TableHead>
+                      <TableHead>Horómetro Objetivo</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Costo Estimado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {schedules.map((m, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium">{m.unitNumber}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{m.maintenanceType}</Badge>
+                        </TableCell>
+                        <TableCell>{m.currentHours.toLocaleString()}h</TableCell>
+                        <TableCell>{m.scheduledHours.toLocaleString()}h</TableCell>
+                        <TableCell>
+                          {m.hoursUntilDue < 0 ? (
+                            <Badge variant="destructive">{Math.abs(m.hoursUntilDue)}h vencido</Badge>
+                          ) : m.hoursUntilDue <= 50 ? (
+                            <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">{m.hoursUntilDue}h</Badge>
+                          ) : (
+                            <Badge variant="outline">{m.hoursUntilDue}h</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>${m.estimatedCost.toFixed(2)}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {upcomingMaintenanceReport.map((maintenance, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{maintenance.unitNumber}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{maintenance.maintenanceType}</Badge>
-                          </TableCell>
-                          <TableCell>{maintenance.currentHours.toLocaleString()}h</TableCell>
-                          <TableCell>{maintenance.scheduledHours.toLocaleString()}h</TableCell>
-                          <TableCell>
-                            {maintenance.daysUntilDue < 0 ? (
-                              <Badge variant="destructive">{Math.abs(maintenance.daysUntilDue)} días vencido</Badge>
-                            ) : maintenance.daysUntilDue <= 3 ? (
-                              <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
-                                {maintenance.daysUntilDue} días
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">{maintenance.daysUntilDue} días</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>${maintenance.estimatedCost.toFixed(2)}</TableCell>
-                          <TableCell>{getSeverityBadge(maintenance.priority)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
-            <TabsContent value="costs" className="space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Distribución de Costos</CardTitle>
-                    <CardDescription>Desglose por categoría</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ChartContainer
-                      config={{ amount: { label: "Monto", color: "hsl(var(--chart-1))" } }}
-                      className="h-[300px]"
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={costSummaryReport}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={120}
-                            paddingAngle={5}
-                            dataKey="amount"
-                          >
-                            {costSummaryReport.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={`hsl(var(--chart-${(index % 5) + 1}))`} />
-                            ))}
-                          </Pie>
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </ChartContainer>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Resumen de Costos</CardTitle>
-                    <CardDescription>Detalle por categoría</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {costSummaryReport.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-4 h-4 rounded-full"
-                              style={{ backgroundColor: `hsl(var(--chart-${(index % 5) + 1}))` }}
-                            />
-                            <div>
-                              <div className="font-medium">{item.category}</div>
-                              <div className="text-sm text-muted-foreground">{item.percentage}% del total</div>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-bold">${item.amount.toFixed(2)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
+            {/* Costos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Tendencia de Costos Mensuales</CardTitle>
-                  <CardDescription>Evolución de costos por categoría</CardDescription>
+                  <CardTitle>Distribución de Costos</CardTitle>
+                  <CardDescription>Desglose por categoría</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ChartContainer
-                    config={{
-                      preventive: { label: "Preventivo", color: "hsl(var(--chart-1))" },
-                      corrective: { label: "Correctivo", color: "hsl(var(--chart-2))" },
-                      fuel: { label: "Combustible", color: "hsl(var(--chart-3))" },
-                    }}
-                    className="h-[400px]"
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={monthlyTrendData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis />
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        <Bar dataKey="preventive" stackId="a" fill="var(--color-preventive)" />
-                        <Bar dataKey="corrective" stackId="a" fill="var(--color-corrective)" />
-                        <Bar dataKey="fuel" stackId="a" fill="var(--color-fuel)" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </ChartContainer>
+                  <CostCharts pieData={pie} monthly={monthlyTrend} />
                 </CardContent>
               </Card>
-            </TabsContent>
 
-            <TabsContent value="alerts" className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Bell className="h-5 w-5" />
-                    Alertas Activas del Sistema
-                  </CardTitle>
-                  <CardDescription>Notificaciones que requieren atención</CardDescription>
+                  <CardTitle>Resumen de Costos</CardTitle>
+                  <CardDescription>Detalle por categoría</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {alertsData.map((alert) => (
-                      <div key={alert.id} className="flex items-start gap-4 p-4 border rounded-lg">
-                        <div className="flex-shrink-0 mt-1">{getAlertIcon(alert.type)}</div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h4 className="font-medium">{alert.title}</h4>
-                            {getSeverityBadge(alert.severity)}
-                            <Badge variant="outline">{alert.unit}</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-2">{alert.description}</p>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(alert.createdAt).toLocaleString("es-ES")}
+                    {pie.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-4 h-4 rounded-full"
+                            style={{ backgroundColor: `hsl(var(--chart-${(index % 5) + 1}))` }}
+                          />
+                          <div>
+                            <div className="font-medium">{item.category}</div>
+                            <div className="text-sm text-muted-foreground">{item.percentage}% del total</div>
                           </div>
                         </div>
-                        <Button size="sm" variant="outline">
-                          Resolver
-                        </Button>
+                        <div className="text-right">
+                          <div className="font-bold">${item.amount.toFixed(2)}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
 
-            <TabsContent value="downtime" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    Análisis de Disponibilidad
-                  </CardTitle>
-                  <CardDescription>Tiempo de parada y disponibilidad por unidad</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Unidad</TableHead>
-                        <TableHead>Tiempo Total Parada (h)</TableHead>
-                        <TableHead>Parada Planificada (h)</TableHead>
-                        <TableHead>Parada No Planificada (h)</TableHead>
-                        <TableHead>Disponibilidad (%)</TableHead>
-                        <TableHead>Estado</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {downtimeReport.map((unit, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{unit.unit}</TableCell>
-                          <TableCell>{unit.totalDowntime}h</TableCell>
-                          <TableCell>{unit.plannedDowntime}h</TableCell>
-                          <TableCell>{unit.unplannedDowntime}h</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{unit.availability}%</span>
-                              <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full ${
-                                    unit.availability >= 95
-                                      ? "bg-green-500"
-                                      : unit.availability >= 90
-                                        ? "bg-yellow-500"
-                                        : "bg-red-500"
-                                  }`}
-                                  style={{ width: `${unit.availability}%` }}
-                                />
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {unit.availability >= 95 ? (
-                              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Excelente</Badge>
-                            ) : unit.availability >= 90 ? (
-                              <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Buena</Badge>
+            {/* Alertas */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5" />
+                  Alertas Activas del Sistema
+                </CardTitle>
+                <CardDescription>Anomalías abiertas/en proceso</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {anomalies.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No hay alertas activas</div>
+                ) : (
+                  <div className="space-y-4">
+                    {anomalies.map((a) => (
+                      <div key={a.id} className="flex items-start gap-4 p-4 border rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-medium">{a.anomaly_type || "Anomalía"}</h4>
+                            {getSeverityBadge(a.severity)}
+                            <Badge variant="outline">{a.unit?.unit_number ?? "—"}</Badge>
+                            {a.status === "open" ? (
+                              <Badge variant="outline">Abierta</Badge>
                             ) : (
-                              <Badge variant="destructive">Mejorar</Badge>
+                              <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">En proceso</Badge>
                             )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">{a.description}</p>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(a.report_date).toLocaleString("es-ES")} · {a.reported_by || "—"}
+                          </div>
+                        </div>
+                        <ResolveAnomalyButton id={a.id} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Disponibilidad */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Análisis de Disponibilidad
+                </CardTitle>
+                <CardDescription>Tiempo de parada y disponibilidad por unidad</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Unidad</TableHead>
+                      <TableHead>Tiempo Total Parada (h)</TableHead>
+                      <TableHead>Parada Planificada (h)</TableHead>
+                      <TableHead>Parada No Planificada (h)</TableHead>
+                      <TableHead>Disponibilidad (%)</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {downtimeRows.map((unit, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{unit.unit}</TableCell>
+                        <TableCell>{unit.totalDowntime}h</TableCell>
+                        <TableCell>{unit.plannedDowntime}h</TableCell>
+                        <TableCell>{unit.unplannedDowntime}h</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{unit.availability}%</span>
+                            <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  unit.availability >= 95
+                                    ? "bg-green-500"
+                                    : unit.availability >= 90
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                }`}
+                                style={{ width: `${unit.availability}%` }}
+                              />
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {unit.availability >= 95 ? (
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Excelente</Badge>
+                          ) : unit.availability >= 90 ? (
+                            <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Buena</Badge>
+                          ) : (
+                            <Badge variant="destructive">Mejorar</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
     </div>
