@@ -1,8 +1,11 @@
-// lib/actions/costs.ts
+// my-app/lib/actions/costs.ts
 "use server"
 
 import { createServerClient } from "@/lib/supabase/server"
 
+/* =========================
+ * Tipos públicos
+ * ========================= */
 export type PeriodKey = "current_month" | "last_month" | "quarter" | "year"
 
 export type CostSummaryItem = {
@@ -39,12 +42,15 @@ export type DowntimeRow = {
   availability: number
 }
 
+/* =========================
+ * Utilidades
+ * ========================= */
 function safeNumber(n: number | null | undefined) {
   return typeof n === "number" && !Number.isNaN(n) ? n : 0
 }
 
 function monthShortEs(idx0: number) {
-  return new Date(2000, idx0, 1).toLocaleString("es", { month: "short" })
+  return new Date(2000, idx0, 1).toLocaleString("es-ES", { month: "short" }).replace(".", "")
 }
 
 // A veces Supabase devuelve la relación como arreglo
@@ -58,9 +64,11 @@ function normalizeUnit(u: any): { unit_number: string } | null {
   return null
 }
 
-export function periodToRange(period: PeriodKey): { date_from: string; date_to: string } {
-  const now = new Date()
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+/** Devuelve rango [from, to] (YYYY-MM-DD) para un período lógico */
+export function periodToRange(period: PeriodKey): { from: string; to: string } {
+  const today = new Date()
+  // 'end' como hoy (sin horas para evitar desfaces TZ en slice)
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   let start = new Date(end)
 
   switch (period) {
@@ -72,11 +80,12 @@ export function periodToRange(period: PeriodKey): { date_from: string; date_to: 
       const y = m < 0 ? end.getFullYear() - 1 : end.getFullYear()
       const mm = (m + 12) % 12
       start = new Date(y, mm, 1)
-      // último día del mes anterior
+      // Último día del mes anterior
       end.setFullYear(y, mm + 1, 0)
       break
     }
     case "quarter": {
+      // últimos 3 meses (aprox)
       const m = end.getMonth()
       start = new Date(end.getFullYear(), m - 2, 1)
       break
@@ -87,30 +96,39 @@ export function periodToRange(period: PeriodKey): { date_from: string; date_to: 
   }
 
   return {
-    date_from: start.toISOString().slice(0, 10),
-    date_to: end.toISOString().slice(0, 10),
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
   }
 }
 
+/* =========================
+ * Consultas
+ * ========================= */
+
+/** Costos por categoría (preventive/corrective/parts desde services y fuel desde fuel_consumption) */
 export async function getCostBreakdown(
-  date_from: string,
-  date_to: string,
+  from: string,
+  to: string,
 ): Promise<CostBreakdown> {
   const supabase = createServerClient()
 
   // Services (preventive/corrective + parts)
-  const { data: services } = await supabase
+  const { data: services, error: svcErr } = await supabase
     .from("services")
     .select("service_type,total_cost,parts_cost,service_date")
-    .gte("service_date", date_from)
-    .lte("service_date", date_to)
+    .gte("service_date", from)
+    .lte("service_date", to)
+
+  if (svcErr) throw new Error(svcErr.message)
 
   // Fuel
-  const { data: fuels } = await supabase
+  const { data: fuels, error: fuelErr } = await supabase
     .from("fuel_consumption")
-    .select("fuel_cost_usd,period_start")
-    .gte("period_start", date_from)
-    .lte("period_start", date_to)
+    .select("fuel_cost_usd,period_start,period_end")
+    .gte("period_start", from)
+    .lte("period_end", to)
+
+  if (fuelErr) throw new Error(fuelErr.message)
 
   const svcList =
     (services ?? []) as {
@@ -120,7 +138,12 @@ export async function getCostBreakdown(
       service_date: string
     }[]
 
-  const fuelList = (fuels ?? []) as { fuel_cost_usd: number | null; period_start: string }[]
+  const fuelList =
+    (fuels ?? []) as {
+      fuel_cost_usd: number | null
+      period_start: string
+      period_end: string
+    }[]
 
   const preventive = svcList
     .filter((s) => s.service_type === "preventive")
@@ -131,7 +154,6 @@ export async function getCostBreakdown(
     .reduce((sum, s) => sum + safeNumber(s.total_cost), 0)
 
   const parts = svcList.reduce((sum, s) => sum + safeNumber(s.parts_cost), 0)
-
   const fuel = fuelList.reduce((sum, f) => sum + safeNumber(f.fuel_cost_usd), 0)
 
   const total = preventive + corrective + parts + fuel
@@ -152,25 +174,31 @@ export async function getCostBreakdown(
   return { total, preventive, corrective, fuel, parts, items }
 }
 
+/** Tendencia mensual combinada (services + fuel_consumption) para el año en curso */
 export async function getMonthlyTrend(year?: number): Promise<MonthlyTrendRow[]> {
   const supabase = createServerClient()
   const y = year ?? new Date().getFullYear()
 
-  const { data: services } = await supabase
+  const { data: services, error: svcErr } = await supabase
     .from("services")
     .select("service_type,total_cost,service_date")
     .gte("service_date", `${y}-01-01`)
     .lte("service_date", `${y}-12-31`)
 
-  const { data: fuels } = await supabase
+  if (svcErr) throw new Error(svcErr.message)
+
+  const { data: fuels, error: fuelErr } = await supabase
     .from("fuel_consumption")
     .select("fuel_cost_usd,period_start")
     .gte("period_start", `${y}-01-01`)
     .lte("period_start", `${y}-12-31`)
 
+  if (fuelErr) throw new Error(fuelErr.message)
+
   const svcList =
     (services ?? []) as { service_type: string | null; total_cost: number | null; service_date: string }[]
-  const fuelList = (fuels ?? []) as { fuel_cost_usd: number | null; period_start: string }[]
+  const fuelList =
+    (fuels ?? []) as { fuel_cost_usd: number | null; period_start: string }[]
 
   const months: MonthlyTrendRow[] = Array.from({ length: 12 }, (_, i) => ({
     month: monthShortEs(i),
@@ -194,7 +222,8 @@ export async function getMonthlyTrend(year?: number): Promise<MonthlyTrendRow[]>
   return months
 }
 
-export async function getDowntimeReport(date_from: string, date_to: string): Promise<DowntimeRow[]> {
+/** Reporte de downtime por unidad usando services */
+export async function getDowntimeReport(from: string, to: string): Promise<DowntimeRow[]> {
   const supabase = createServerClient()
 
   const { data, error } = await supabase
@@ -208,8 +237,8 @@ export async function getDowntimeReport(date_from: string, date_to: string): Pro
       unit:units(unit_number)
     `,
     )
-    .gte("service_date", date_from)
-    .lte("service_date", date_to)
+    .gte("service_date", from)
+    .lte("service_date", to)
 
   if (error) {
     console.error("getDowntimeReport error:", error)
@@ -221,7 +250,7 @@ export async function getDowntimeReport(date_from: string, date_to: string): Pro
     unit_id: r.unit_id ?? null,
     service_type: r.service_type ?? null,
     downtime_hours: typeof r.downtime_hours === "number" ? r.downtime_hours : 0,
-    service_date: r.service_date as string,
+    service_date: String(r.service_date),
     unit: normalizeUnit(r.unit),
   }))
 
@@ -238,11 +267,11 @@ export async function getDowntimeReport(date_from: string, date_to: string): Pro
     byUnit.set(key, entry)
   }
 
-  // Cálculo simple sobre 720h (aprox. mes)
+  // Cálculo simple sobre ~720h/mes (ajusta a tu operación real)
   const totalPeriodHours = 24 * 30
   for (const v of byUnit.values()) {
     v.availability = Math.max(0, Number(((1 - v.totalDowntime / totalPeriodHours) * 100).toFixed(1)))
   }
 
-  return Array.from(byUnit.values())
+  return Array.from(byUnit.values()).sort((a, b) => a.unit.localeCompare(b.unit))
 }
