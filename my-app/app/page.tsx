@@ -1,4 +1,6 @@
 // app/page.tsx (Server Component)
+export const dynamic = "force-dynamic"
+
 import Sidebar from "@/components/sidebar"
 import { getUnitsSummary } from "@/lib/actions/units"
 import { getMaintenanceSummary } from "@/lib/actions/maintenance"
@@ -22,6 +24,28 @@ type AnomaliesServer = {
   critical?: number
   high_severity?: number
   critical_severity?: number
+}
+
+// Normaliza las filas que vengan de getFuelTrends() a FuelTrend
+function normalizeFuelTrends(rows: any[]): FuelTrend[] {
+  return (rows ?? []).map((r) => {
+    const liters = Number(r.liters ?? 0)
+    // algunos backends devuelven cost como 'usd' o 'fuel_cost'
+    const cost = Number(r.cost ?? r.usd ?? r.fuel_cost ?? 0)
+
+    // eficiencia: si no viene, intenta calcularla como litros/horas o l/h si el backend trae 'hours' o 'hours_operated'
+    const hours = Number(r.hours ?? r.hours_operated ?? 0)
+    const efficiencyRaw =
+      r.efficiency ?? r.lph ?? (hours > 0 ? liters / hours : 0)
+
+    return {
+      month: String(r.month ?? ""),
+      liters,
+      cost: Number.isFinite(cost) ? cost : 0,
+      efficiency: Number.isFinite(Number(efficiencyRaw)) ? Number(efficiencyRaw) : 0,
+      records: Number(r.records ?? r.count ?? 0),
+    }
+  })
 }
 
 export default async function Dashboard() {
@@ -56,7 +80,7 @@ export default async function Dashboard() {
       ? (servicesResult.data as ServicesSummary)
       : { total_cost: 0 }
 
-  // Normalizamos el resumen de anomalías a los 3 campos que usa el dashboard.
+  // Normalizamos el resumen de anomalías a los 3 campos que usa el dashboard
   const anomaliesRaw: AnomaliesServer | undefined = anomaliesResult.success
     ? (anomaliesResult.data as AnomaliesServer)
     : undefined
@@ -67,21 +91,12 @@ export default async function Dashboard() {
     high: anomaliesRaw?.high ?? anomaliesRaw?.high_severity ?? 0,
   }
 
-  // ---- Normalización segura del fuel ----
-  // getFuelTrends puede devolver filas sin 'cost' ni 'efficiency'.
-  const fuelRows = fuelResult.success && Array.isArray(fuelResult.data) ? (fuelResult.data as any[]) : []
-  const fuelData: FuelTrend[] = fuelRows.map((r) => ({
-    month: String(r.month ?? ""),
-    liters: Number(r.liters ?? 0),
-    // intenta distintas claves comunes; si no, 0
-    cost: Number(r.cost ?? r.fuel_cost ?? r.fuel_cost_usd ?? 0),
-    efficiency: Number(r.efficiency ?? r.lph ?? 0),
-    records: Number(r.records ?? r.count ?? 0),
-  }))
+  // ⬇️ Normalización para evitar el error TS2352
+  const fuelData: FuelTrend[] = fuelResult.success
+    ? normalizeFuelTrends(fuelResult.data as any[])
+    : []
 
-  // ---- Monthly costs (ya compatible) ----
-  const monthlyCosts: MonthlyCost[] =
-    costsResult.success && Array.isArray(costsResult.data) ? (costsResult.data as MonthlyCost[]) : []
+  const monthlyCosts: MonthlyCost[] = (costsResult.success ? costsResult.data : []) as MonthlyCost[]
 
   const statusData: StatusDatum[] = [
     { name: "Activos", value: units.active, color: "hsl(var(--chart-1))" },
