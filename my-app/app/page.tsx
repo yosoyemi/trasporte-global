@@ -67,8 +67,21 @@ export default async function Dashboard() {
     high: anomaliesRaw?.high ?? anomaliesRaw?.high_severity ?? 0,
   }
 
-  const fuelData: FuelTrend[] = (fuelResult.success ? fuelResult.data : []) as FuelTrend[]
-  const monthlyCosts: MonthlyCost[] = (costsResult.success ? costsResult.data : []) as MonthlyCost[]
+  // ---- Normalización segura del fuel ----
+  // getFuelTrends puede devolver filas sin 'cost' ni 'efficiency'.
+  const fuelRows = fuelResult.success && Array.isArray(fuelResult.data) ? (fuelResult.data as any[]) : []
+  const fuelData: FuelTrend[] = fuelRows.map((r) => ({
+    month: String(r.month ?? ""),
+    liters: Number(r.liters ?? 0),
+    // intenta distintas claves comunes; si no, 0
+    cost: Number(r.cost ?? r.fuel_cost ?? r.fuel_cost_usd ?? 0),
+    efficiency: Number(r.efficiency ?? r.lph ?? 0),
+    records: Number(r.records ?? r.count ?? 0),
+  }))
+
+  // ---- Monthly costs (ya compatible) ----
+  const monthlyCosts: MonthlyCost[] =
+    costsResult.success && Array.isArray(costsResult.data) ? (costsResult.data as MonthlyCost[]) : []
 
   const statusData: StatusDatum[] = [
     { name: "Activos", value: units.active, color: "hsl(var(--chart-1))" },
