@@ -1,3 +1,4 @@
+// components/report-anomaly-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -19,11 +20,15 @@ import { createAnomaly } from "@/lib/actions/anomalies"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
+type UnitOption = { id: string; unit_number: string }
+type Severity = "low" | "medium" | "high" | "critical"
+type Category = "mechanical" | "electrical" | "hydraulic" | "operational" | "safety" | "other"
+
 export default function ReportAnomalyDialog({
   units,
   reporters,
 }: {
-  units: { id: string; unit_number: string }[]
+  units: UnitOption[]
   reporters: string[]
 }) {
   const router = useRouter()
@@ -31,12 +36,12 @@ export default function ReportAnomalyDialog({
   const [loading, setLoading] = useState(false)
 
   // form state
-  const [unitId, setUnitId] = useState("")
-  const [reportedBy, setReportedBy] = useState("")
-  const [description, setDescription] = useState("")
-  const [severity, setSeverity] = useState<"low" | "medium" | "high" | "critical" | "">("")
-  const [category, setCategory] = useState("")
-  const [estimated, setEstimated] = useState("")
+  const [unitId, setUnitId] = useState<string>("")
+  const [reportedBy, setReportedBy] = useState<string>("")
+  const [description, setDescription] = useState<string>("")
+  const [severity, setSeverity] = useState<Severity | "">("")
+  const [category, setCategory] = useState<Category | "">("")
+  const [estimated, setEstimated] = useState<string>("")
 
   const toNum = (v: string) => {
     const n = Number.parseFloat(v)
@@ -53,9 +58,9 @@ export default function ReportAnomalyDialog({
       const res = await createAnomaly({
         unit_id: unitId,
         description,
-        severity: severity as "low" | "medium" | "high" | "critical",
+        severity: severity as Severity,
         reported_by: reportedBy,
-        anomaly_type: category || undefined,
+        anomaly_type: (category || undefined) as Category | undefined,
         estimated_repair_cost: toNum(estimated),
       })
       if (res.success) {
@@ -140,7 +145,10 @@ export default function ReportAnomalyDialog({
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Severidad *</Label>
-              <Select value={severity} onValueChange={(v) => setSeverity(v as any)}>
+              <Select
+                value={severity}
+                onValueChange={(v: Severity) => setSeverity(v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar severidad" />
                 </SelectTrigger>
@@ -155,7 +163,10 @@ export default function ReportAnomalyDialog({
 
             <div className="space-y-2">
               <Label>Categoría</Label>
-              <Select value={category} onValueChange={setCategory}>
+              <Select
+                value={category}
+                onValueChange={(v: Category) => setCategory(v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar categoría" />
                 </SelectTrigger>

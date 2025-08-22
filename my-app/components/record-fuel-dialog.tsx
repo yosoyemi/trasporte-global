@@ -1,3 +1,4 @@
+// components/record-fuel-dialog.tsx
 "use client"
 
 import { useState } from "react"
@@ -18,27 +19,30 @@ import { createFuelConsumption } from "@/lib/actions/fuel"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
-export default function RecordFuelDialog({
-  units,
-}: {
-  units: { id: string; unit_number: string }[]
-}) {
+type UnitOption = { id: string; unit_number: string }
+type PeriodType = "weekly" | "monthly"
+
+export default function RecordFuelDialog({ units }: { units: UnitOption[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const [unitId, setUnitId] = useState("")
-  const [periodType, setPeriodType] = useState<"weekly" | "monthly" | "">("")
-  const [start, setStart] = useState("")
-  const [end, setEnd] = useState("")
-  const [liters, setLiters] = useState("")
-  const [hours, setHours] = useState("")
-  const [costPerLiter, setCostPerLiter] = useState("")
-  const [notes, setNotes] = useState("")
+  const [unitId, setUnitId] = useState<string>("")
+  const [periodType, setPeriodType] = useState<PeriodType | "">("")
+  const [start, setStart] = useState<string>("")
+  const [end, setEnd] = useState<string>("")
+  const [liters, setLiters] = useState<string>("")
+  const [hours, setHours] = useState<string>("")
+  const [costPerLiter, setCostPerLiter] = useState<string>("")
+  const [notes, setNotes] = useState<string>("")
 
-  const efficiency = liters && hours ? (parseFloat(liters) / parseFloat(hours) || 0) : 0
+  const efficiency =
+    liters && hours ? (Number.parseFloat(liters) / Number.parseFloat(hours) || 0) : 0
+
   const totalCost =
-    liters && costPerLiter ? parseFloat(liters) * parseFloat(costPerLiter) : undefined
+    liters && costPerLiter
+      ? Number.parseFloat(liters) * Number.parseFloat(costPerLiter)
+      : undefined
 
   async function onSubmit() {
     if (!unitId || !periodType || !start || !end || !liters || !hours) {
@@ -49,12 +53,12 @@ export default function RecordFuelDialog({
     try {
       const res = await createFuelConsumption({
         unit_id: unitId,
-        period_type: periodType as "weekly" | "monthly",
+        period_type: periodType as PeriodType,
         period_start: start,
         period_end: end,
-        fuel_consumed_liters: parseFloat(liters),
-        hours_operated: parseFloat(hours),
-        cost_per_liter: costPerLiter ? parseFloat(costPerLiter) : undefined,
+        fuel_consumed_liters: Number.parseFloat(liters),
+        hours_operated: Number.parseFloat(hours),
+        cost_per_liter: costPerLiter ? Number.parseFloat(costPerLiter) : undefined,
         notes: notes || undefined,
       })
       if (res.success) {
@@ -110,7 +114,10 @@ export default function RecordFuelDialog({
 
           <div className="space-y-2">
             <Label>Tipo de Período *</Label>
-            <Select value={periodType} onValueChange={(v) => setPeriodType(v as any)}>
+            <Select
+              value={periodType}
+              onValueChange={(v: PeriodType) => setPeriodType(v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar" />
               </SelectTrigger>
@@ -146,7 +153,12 @@ export default function RecordFuelDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Costo por Litro (USD)</Label>
-              <Input type="number" step="0.01" value={costPerLiter} onChange={(e) => setCostPerLiter(e.target.value)} />
+              <Input
+                type="number"
+                step="0.01"
+                value={costPerLiter}
+                onChange={(e) => setCostPerLiter(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label>Total Estimado</Label>
@@ -159,7 +171,7 @@ export default function RecordFuelDialog({
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" />
           </div>
 
-          {(liters && hours) ? (
+          {liters && hours ? (
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-sm font-medium">Eficiencia calculada:</p>
               <p className="text-lg font-bold">{efficiency.toFixed(2)} L/h</p>

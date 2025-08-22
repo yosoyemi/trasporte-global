@@ -1,3 +1,4 @@
+// components/create-service-dialog.tsx
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -148,7 +149,10 @@ export function CreateServiceDialog({ units }: { units: UnitOpt[] }) {
 
           <div className="space-y-2">
             <Label>Tipo *</Label>
-            <Select value={serviceType} onValueChange={(v) => setServiceType(v as any)}>
+            <Select
+              value={serviceType}
+              onValueChange={(v: "corrective" | "preventive" | "inspection" | "repair") => setServiceType(v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
@@ -163,7 +167,10 @@ export function CreateServiceDialog({ units }: { units: UnitOpt[] }) {
 
           <div className="space-y-2">
             <Label>Severidad *</Label>
-            <Select value={severity} onValueChange={(v) => setSeverity(v as any)}>
+            <Select
+              value={severity}
+              onValueChange={(v: "low" | "medium" | "high" | "critical") => setSeverity(v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Severidad" />
               </SelectTrigger>

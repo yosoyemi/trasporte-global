@@ -1,3 +1,4 @@
+// lib/actions/fuel.ts
 "use server"
 
 import { createServerClient } from "@/lib/supabase/server"
@@ -111,17 +112,39 @@ export async function updateFuelConsumption(data: UpdateFuelConsumptionData) {
       }
     }
 
-    const toUpdate: any = {
-      ...rest,
-      updated_at: new Date().toISOString(),
-    }
-    if (efficiency_lph !== undefined) toUpdate.efficiency_lph = efficiency_lph
-    if (fuel_cost_usd !== undefined) toUpdate.fuel_cost_usd = fuel_cost_usd
-    delete toUpdate.cost_per_liter
+    // Tipado estricto del payload de actualización
+    type FuelUpdatePayload = Partial<
+      Pick<
+        FuelConsumption,
+        | "unit_id"
+        | "period_type"
+        | "period_start"
+        | "period_end"
+        | "fuel_consumed_liters"
+        | "hours_operated"
+        | "efficiency_lph"
+        | "fuel_cost_usd"
+        | "notes"
+      >
+    > & { updated_at: string }
+
+    const updatePayload: FuelUpdatePayload = { updated_at: new Date().toISOString() }
+
+    if (rest.unit_id !== undefined) updatePayload.unit_id = rest.unit_id
+    if (rest.period_type !== undefined) updatePayload.period_type = rest.period_type
+    if (rest.period_start !== undefined) updatePayload.period_start = rest.period_start
+    if (rest.period_end !== undefined) updatePayload.period_end = rest.period_end
+    if (rest.fuel_consumed_liters !== undefined) updatePayload.fuel_consumed_liters = rest.fuel_consumed_liters
+    if (rest.hours_operated !== undefined) updatePayload.hours_operated = rest.hours_operated
+    if (rest.notes !== undefined) updatePayload.notes = rest.notes
+
+    if (efficiency_lph !== undefined) updatePayload.efficiency_lph = efficiency_lph
+    if (fuel_cost_usd !== undefined) updatePayload.fuel_cost_usd = fuel_cost_usd
+    // Nota: no incluimos cost_per_liter porque no es columna de la tabla
 
     const { data: row, error } = await supabase
       .from("fuel_consumption")
-      .update(toUpdate)
+      .update(updatePayload)
       .eq("id", id)
       .select("*")
       .single()
