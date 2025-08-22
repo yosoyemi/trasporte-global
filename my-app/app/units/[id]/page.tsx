@@ -1,3 +1,5 @@
+// app/units/[id]/page.tsx
+
 import Sidebar from "@/components/sidebar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -8,8 +10,9 @@ import { getUnitById } from "@/lib/actions/units"
 import EditUnitDialog from "@/components/edit-unit-dialog"
 import UpdateHours from "@/components/update-hours"
 import ChangeUnitImage from "@/components/change-unit-image"
-import UnitImage from "@/components/unit-image"   // <— asegúrate de que el archivo exista
+import UnitImage from "@/components/unit-image"
 
+// Nota Next.js 15: `params` es una Promise en PageProps.
 type Params = { id: string }
 
 const getStatusBadge = (st: string) => {
@@ -25,8 +28,8 @@ const getStatusBadge = (st: string) => {
   }
 }
 
-export default async function UnitDetailsPage(props: { params: Params | Promise<Params> }) {
-  const { id } = await Promise.resolve(props.params as Params)
+export default async function UnitDetailsPage({ params }: { params: Promise<Params> }) {
+  const { id } = await params
   const unitRes = await getUnitById(id)
 
   if (!unitRes.success || !unitRes.data) {
@@ -148,7 +151,9 @@ export default async function UnitDetailsPage(props: { params: Params | Promise<
                     <div className="flex items-center gap-2">
                       <Wrench className="h-4 w-4 text-muted-foreground" />
                       <div className="font-medium">
-                        {unit.next_service_hours != null ? `${unit.next_service_hours.toLocaleString()}h` : "Sin programar"}
+                        {unit.next_service_hours != null
+                          ? `${unit.next_service_hours.toLocaleString()}h`
+                          : "Sin programar"}
                       </div>
                     </div>
                   </div>
