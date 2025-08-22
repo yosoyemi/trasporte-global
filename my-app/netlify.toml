@@ -1,0 +1,8 @@
+# netlify.toml (en la RAÍZ del repo)
+[build]
+  base    = "my-app"          # <- tu proyecto vive aquí
+  command = "npm run build"   # Next build
+  publish = ".next"           # lo maneja el plugin
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
